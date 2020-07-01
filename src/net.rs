@@ -1,16 +1,19 @@
 use std::collections::*;
 
+#[derive(Debug)]
 pub struct Net {
     wires: Vec<bool>,
     gates: Vec<NorGate>,
 }
 
+#[derive(Debug)]
 pub struct NorGate {
     in1: usize,
     in2: usize,
     out: usize,
 }
 
+#[derive(Debug)]
 pub struct Simulation {
     net: Net,
     /// which gates are dependent on which wires
@@ -28,6 +31,22 @@ impl Net {
         self.wires.append(&mut vec![false; width]);
         begin
     }
+
+    /// creates a new nor gate with specified I/O
+    pub fn create_nor(&mut self, in1: usize, in2: usize, out: usize) {
+        assert!(in1 < self.wires.len());
+        assert!(in2 < self.wires.len());
+        assert!(out < self.wires.len());
+
+        self.gates.push(NorGate { in1, in2, out });
+    }
+
+    pub fn new() -> Self {
+        Self {
+            wires: Vec::new(),
+            gates: Vec::new(),
+        }
+    }
 }
 
 impl Simulation {
@@ -41,6 +60,10 @@ impl Simulation {
             dependencies[gate.in2].push(idx);
 
             process_queue.push_back(idx);
+        }
+
+        for dep in dependencies.iter_mut() {
+            dep.dedup();
         }
 
         Self {

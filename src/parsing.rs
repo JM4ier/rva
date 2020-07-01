@@ -11,8 +11,15 @@ use crate::parsed::*;
 
 fn identifier(i: &str) -> IResult<&str, String> {
     map(
-        take_while1(|c: char| c.is_ascii_alphabetic()),
-        str::to_string,
+        tuple((
+                take_while1(|c: char| c.is_ascii_alphabetic()), 
+                take_while(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        )),
+        |(s1, s2): (&str, &str)| {
+            let mut owned = s1.to_string();
+            owned.push_str(s2);
+            owned
+        }
     )(i)
 }
 
@@ -188,12 +195,12 @@ fn wire_test() {
     assert_eq!(wire("hans "), Ok((" ", Wire { name: "hans".to_string(), width: 1, kind: WireKind::Private })));
 }
 
-fn local_wire(i: &str) -> IResult<&str, Wire> {
+fn local_wire(i: &str) -> IResult<&str, Vec<Wire>> {
     map(
         tuple((
                 tag("wire"),
                 ws,
-                wire,
+                list(wire),
                 tag(";"),
         )),
         |(_, _, w, _)| w
@@ -223,16 +230,22 @@ fn output_wire(i: &str) -> IResult<&str, Wire> {
 }
 
 fn assignment(i: &str) -> IResult<&str, Connection<String>> {
-    map(
-        tuple((
+    alt((
+            map(
+                tuple((
+                        identifier,
+                        ws,
+                        tag("="),
+                        ws,
+                        wirebus,
+                )),
+                |(name, _, _, _, bus)| Connection { local: bus, module: name }
+            ),
+            map(
                 identifier,
-                ws,
-                tag("="),
-                ws,
-                wirebus,
-        )),
-        |(name, _, _, _, bus)| Connection { local: bus, module: name }
-    )(i)
+                |name| Connection { local: vec![WirePart::total(name.to_string())], module: name },
+            )
+    ))(i)
 }
 
 #[test]
@@ -283,30 +296,31 @@ fn instance(i: &str) -> IResult<&str, Instance<String>> {
 #[test]
 fn instance_test() {
     assert_eq!(instance("nor inv(a=in, b=in) -> (out=out);"), Ok(("", 
-    Instance::<String>{
-        module: "nor".to_string(),
-        name: "inv".to_string(),
-        inputs: vec![
-            Connection::<String> {
-                module: "a".to_string(),
-                local: vec![WirePart::total("in".to_string())]
-            },
-            Connection::<String> {
-                module: "b".to_string(),
-                local: vec![WirePart::total("in".to_string())]
-            },
-        ],
-        outputs: vec![Connection::<String> {
-            module: "out".to_string(),
-            local: vec![WirePart::total("out".to_string())]
-        }],
-    }
+                Instance::<String>{
+                    module: "nor".to_string(),
+                    name: "inv".to_string(),
+                    inputs: vec![
+                        Connection::<String> {
+                            module: "a".to_string(),
+                            local: vec![WirePart::total("in".to_string())]
+                        },
+                        Connection::<String> {
+                            module: "b".to_string(),
+                            local: vec![WirePart::total("in".to_string())]
+                        },
+                    ],
+                    outputs: vec![Connection::<String> {
+                        module: "out".to_string(),
+                        local: vec![WirePart::total("out".to_string())]
+                    }],
+                }
     )));
 }
 
 pub fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
     map(
         tuple((
+                ws,
                 tag("module"),
                 ws,
                 identifier,
@@ -323,14 +337,15 @@ pub fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
                     tag("("),
                     list(output_wire),
                     tag(")"),
-                )
+                ),
+                ws
         )),
-        |(_, _, name, _, inputs, _, _, _, outputs)| (name, inputs, outputs),
+        |(_, _, _, name, _, inputs, _, _, _, outputs, _)| (name, inputs, outputs),
         )(i)
 }
 
 pub enum BodyOption {
-    LocalWire(Wire),
+    LocalWire(Vec<Wire>),
     Instance(Instance<String>),
 }
 
@@ -344,7 +359,11 @@ pub fn body_option (i: &str) -> IResult<&str, BodyOption> {
 pub fn module_body(i: &str) -> IResult<&str, Vec<BodyOption>> {
     delimited(
         tag("{"),
-        many0(delimited(ws, body_option, ws)),
+        delimited(
+            ws,
+            many0(delimited(ws, body_option, ws)),
+            ws,
+        ),
         tag("}"),
     )(i)
 }
@@ -361,7 +380,7 @@ pub fn module(i: &str) -> IResult<&str, Module<String>> {
 
             for line in body {
                 match line {
-                    BodyOption::LocalWire(w) => locals.push(w),
+                    BodyOption::LocalWire(mut w) => locals.append(&mut w),
                     BodyOption::Instance(i) => instances.push(i),
                 }
             }
@@ -369,5 +388,9 @@ pub fn module(i: &str) -> IResult<&str, Module<String>> {
             Module::<String> { name, locals, instances }
         }
     )(i)
+}
+
+pub fn modules(i: &str) -> IResult<&str, Vec<Module<String>>> {
+    many0(module)(i)
 }
 
