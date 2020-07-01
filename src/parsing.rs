@@ -229,7 +229,7 @@ fn output_wire(i: &str) -> IResult<&str, Wire> {
     map(wire, |w| Wire { kind: WireKind::Output, ..w})(i)
 }
 
-fn assignment(i: &str) -> IResult<&str, Connection<String>> {
+fn assignment(i: &str) -> IResult<&str, Connection> {
     alt((
             map(
                 tuple((
@@ -264,7 +264,7 @@ fn assignment_test() {
     })));
 }
 
-fn instance(i: &str) -> IResult<&str, Instance<String>> {
+fn instance(i: &str) -> IResult<&str, Instance> {
     map(
         tuple((
                 ws,
@@ -288,7 +288,7 @@ fn instance(i: &str) -> IResult<&str, Instance<String>> {
                 tag(";"),
         )),
         |(_, module, _, name, _, inputs, _, _, _, outputs, _)| { 
-            Instance::<String> { module, name, inputs, outputs } 
+            Instance { module, name, inputs, outputs } 
         }
     )(i)
 }
@@ -296,7 +296,7 @@ fn instance(i: &str) -> IResult<&str, Instance<String>> {
 #[test]
 fn instance_test() {
     assert_eq!(instance("nor inv(a=in, b=in) -> (out=out);"), Ok(("", 
-                Instance::<String>{
+                Instance{
                     module: "nor".to_string(),
                     name: "inv".to_string(),
                     inputs: vec![
@@ -346,7 +346,7 @@ pub fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
 
 pub enum BodyOption {
     LocalWire(Vec<Wire>),
-    Instance(Instance<String>),
+    Instance(Instance),
 }
 
 pub fn body_option (i: &str) -> IResult<&str, BodyOption> {
@@ -368,7 +368,7 @@ pub fn module_body(i: &str) -> IResult<&str, Vec<BodyOption>> {
     )(i)
 }
 
-pub fn module(i: &str) -> IResult<&str, Module<String>> {
+pub fn module(i: &str) -> IResult<&str, Module> {
     map(
         tuple((module_header, ws, module_body)),
         |((name, mut inputs, mut outputs), _,  body)| {
@@ -385,12 +385,12 @@ pub fn module(i: &str) -> IResult<&str, Module<String>> {
                 }
             }
 
-            Module::<String> { name, locals, instances }
+            Module { name, locals, instances }
         }
     )(i)
 }
 
-pub fn modules(i: &str) -> IResult<&str, Vec<Module<String>>> {
+pub fn modules(i: &str) -> IResult<&str, Vec<Module>> {
     many0(module)(i)
 }
 

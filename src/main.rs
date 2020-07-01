@@ -4,11 +4,13 @@ mod parsed;
 mod parsing;
 mod net;
 mod netgraph;
+mod link;
 
 use nom;
 use parsed::*;
 use parsing::*;
 use net::*;
+use link::*;
 
 use std::collections::*;
 
@@ -106,9 +108,12 @@ fn main() {
 
     let mut net = Net::new();
     let mut heritage = HashSet::new();
-    let wires = vec![vec![]; 3];
+    let mut wires = vec![vec![]; 3];
     let top = mod_map.get(top).unwrap();
-    top.link(&mut heritage, &mod_map, &mut net, wires).unwrap();
+
+    let mut linker = Linker::new(top, &mut wires, &mod_map, &mut heritage, &mut net).unwrap();
+    let netgraph = linker.link().unwrap();
+
 
     let mut sim = Simulation::new(net);
 
@@ -117,4 +122,5 @@ fn main() {
     }
 
     println!("{:#?}", sim);
+    println!("{:#?}", netgraph);
 }

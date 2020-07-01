@@ -1,17 +1,20 @@
 use std::fmt;
 
+#[derive(Debug)]
 pub struct GraphModule {
-    module_name: String,
-    name: String,
-    locals: Vec<GraphWire>,
-    instances: Vec<GraphModule>,
+    pub module_name: String,
+    pub name: String,
+    pub locals: Vec<GraphWire>,
+    pub instances: Vec<GraphModule>,
 }
 
+#[derive(Debug)]
 pub struct GraphWire {
-    name: String,
-    values: Vec<usize>,
+    pub name: String,
+    pub values: Vec<usize>,
 }
 
+#[derive(Debug)]
 pub enum DisplayError {
     InvalidPath(String),
 }
