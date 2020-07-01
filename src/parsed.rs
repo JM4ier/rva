@@ -2,7 +2,7 @@ use crate::net::*;
 
 use std::collections::*;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum WireKind {
     /// Only accessible to the local scope
     Private,
@@ -12,6 +12,7 @@ pub enum WireKind {
     Output,
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct Wire {
     /// Name of wire
     pub name: String,
@@ -22,45 +23,50 @@ pub struct Wire {
     pub kind: WireKind,
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct Connection<T> {
-    /// Local wire
-    local: T,
+    /// Local wires
+    pub local: WireBus,
 
     /// Instanced wire
-    module: T,
+    pub module: T,
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct Instance<T> {
     /// Name of the module that is being instanced
-    module: String,
+    pub module: String,
     /// Name that is given to this instance
-    name: String,
+    pub name: String,
 
     /// Input connections
-    inputs: Vec<Connection<T>>,
+    pub inputs: Vec<Connection<T>>,
 
     /// Output connections
-    outputs: Vec<Connection<T>>,
+    pub outputs: Vec<Connection<T>>,
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct Module<T> {
     /// Name of the module
-    name: String,
+    pub name: String,
 
     /// Local wires
-    locals: Vec<Wire>,
+    pub locals: Vec<Wire>,
 
     /// Local Sub-Module instances
-    instances: Vec<Instance<T>>,
+    pub instances: Vec<Instance<T>>,
 }
 
 pub type ParsedModule = Module<String>;
 
+#[derive(PartialEq, Eq, Debug)]
 enum WireRange {
     Ranged {from: usize, to: usize},
     Total,
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct WirePart {
     name: String,
     range: WireRange,
