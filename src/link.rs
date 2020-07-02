@@ -149,7 +149,7 @@ impl Linker<'_> {
 
             return Ok(GraphModule {
                 module_name: self.module.name.to_owned(),
-                name: String::from("TODO"),
+                name: String::from("<root>"),
                 instances: Vec::new(),
                 locals: vec![
                     GraphWire {
@@ -224,7 +224,7 @@ impl Linker<'_> {
         }
         Ok(GraphModule{
             module_name: self.module.name.to_owned(),
-            name: String::from("TODO"),
+            name: String::from("<root>"),
             instances,
             locals: {
                 let mut locals = Vec::new();
@@ -236,7 +236,6 @@ impl Linker<'_> {
                     });
                 }
                 locals
-
             },
         })
     }

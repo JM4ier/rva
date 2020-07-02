@@ -2,6 +2,7 @@ use nom::{
     *,
     bytes::complete::*,
     combinator::*,
+    character::complete::*,
     sequence::*,
     branch::*,
     multi::*,
@@ -9,7 +10,52 @@ use nom::{
 
 use crate::parsed::*;
 
-fn identifier(i: &str) -> IResult<&str, String> {
+fn bit(i: &str) -> IResult<&str, bool> {
+    map(
+        alt((char('0'), char('1'))),
+        |bit| bit == '1'
+    )(i)
+}
+
+
+fn binary_number(i: &str) -> IResult<&str, Vec<bool>> {
+    // TODO look into bit ordering
+    map(
+        preceded(tag("0b"), many1(bit)),
+        |v| v.into_iter().rev().collect()
+    )(i)
+}
+
+fn hex_digit(i: &str) -> IResult<&str, Vec<bool>> {
+    map (
+        take_while_m_n(1, 1, |c: char| c.is_digit(16)), 
+        |s| {
+            let value = u8::from_str_radix(s, 16).unwrap();
+            let mut vec = vec![false; 4];
+            for bit in 0..4 {
+                vec[bit] = value >> bit > 0;
+            }
+            vec
+        }
+    )(i)
+}
+
+fn hex_number(i: &str) -> IResult<&str, Vec<bool>> {
+    // TODO look into (4bit) ordering
+    map(
+        preceded(tag("0x"), many1(hex_digit)),
+        |v| v.into_iter().rev().flat_map(|v| v.into_iter()).collect()
+    )(i)
+}
+
+pub fn wire_constant(i: &str) -> IResult<&str, Vec<bool>> {
+    alt((
+        binary_number,
+        hex_number,
+    ))(i)
+}
+
+pub fn identifier(i: &str) -> IResult<&str, String> {
     map(
         tuple((
                 take_while1(|c: char| c.is_ascii_alphabetic()), 
@@ -28,7 +74,7 @@ fn identifier_test() {
     assert_eq!(identifier("thisisaname"), Ok(("", "thisisaname".to_string())));
 }
 
-fn number(i: &str) -> IResult<&str, usize> {
+pub fn number(i: &str) -> IResult<&str, usize> {
     map_res(
         take_while1(|c: char| c.is_digit(10)),
         |i| usize::from_str_radix(i, 10)
@@ -91,7 +137,7 @@ fn wirepart_test() {
     assert_eq!(wirepart("test[1:2] other stuff"), Ok((" other stuff", WirePart::ranged("test".to_string(), 1, 2))));
 }
 
-fn ws(i: &str) -> IResult<&str, &str> {
+pub fn ws(i: &str) -> IResult<&str, &str> {
     take_while(
         |c: char| c.is_ascii_whitespace()
     )(i)
@@ -103,32 +149,13 @@ fn ws_test() {
     assert_eq!(ws(" word "), Ok(("word ", " ")));
 }
 
-fn delim(i: &str) -> IResult<&str, ()> {
-    map(
-        delimited(
-            ws, 
-            tag(","),
-            ws,
-        ),
-        |_|()
-    )(i)
-}
-
-#[test]
-fn delim_test() {
-    assert_eq!(delim(", b"), Ok(("b", ())));
-    assert_eq!(delim(" , c"), Ok(("c", ())));
-    assert_eq!(delim(",,c"), Ok((",c", ())));
-
-}
-
-fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F) -> impl Fn(&'a str) -> IResult<&'a str, Vec<T>> {
+pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F, delimiter: &'a str) -> impl Fn(&'a str) -> IResult<&'a str, Vec<T>> {
     map(
         tuple((
                 many0(
                     map(
-                        tuple((parser, delim)),
-                        |(parsed, _)| parsed
+                        tuple((parser, ws, tag(delimiter), ws)),
+                        |(parsed, _, _, _)| parsed
                     )
                 ),
                 opt(parser),
@@ -139,16 +166,16 @@ fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F) -> impl Fn(&'
 
 #[test]
 fn list_test() {
-    assert_eq!(list(identifier)("a, b, c"), Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect())));
-    assert_eq!(list(identifier)(")"), Ok((")", vec![])));
-    assert_eq!(list(identifier)("a, b), c"), Ok(("), c", vec![String::from("a"), String::from("b")])));
+    assert_eq!(list(identifier, ",")("a, b, c"), Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect())));
+    assert_eq!(list(identifier, ",")(")"), Ok((")", vec![])));
+    assert_eq!(list(identifier, ",")("a, b), c"), Ok(("), c", vec![String::from("a"), String::from("b")])));
 }
 
 fn wirebus(i: &str) -> IResult<&str, WireBus> {
     alt((
             delimited(
                 tag("{"),
-                list(wirepart),
+                list(wirepart, ","),
                 tag("}")
             ),
             map(
@@ -200,7 +227,7 @@ fn local_wire(i: &str) -> IResult<&str, Vec<Wire>> {
         tuple((
                 tag("wire"),
                 ws,
-                list(wire),
+                list(wire, ","),
                 tag(";"),
         )),
         |(_, _, w, _)| w
@@ -274,7 +301,7 @@ fn instance(i: &str) -> IResult<&str, Instance> {
                 ws,
                 delimited(
                     tag("("),
-                    list(assignment),
+                    list(assignment, ","),
                     tag(")"),
                 ),
                 ws,
@@ -282,7 +309,7 @@ fn instance(i: &str) -> IResult<&str, Instance> {
                 ws,
                 delimited(
                     tag("("),
-                    list(assignment),
+                    list(assignment, ","),
                     tag(")"),
                 ),
                 tag(";"),
@@ -327,7 +354,7 @@ pub fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
                 ws,
                 delimited(
                     tag("("),
-                    list(input_wire),
+                    list(input_wire, ","),
                     tag(")"),
                 ),
                 ws,
@@ -335,7 +362,7 @@ pub fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
                 ws,
                 delimited(
                     tag("("),
-                    list(output_wire),
+                    list(output_wire, ","),
                     tag(")"),
                 ),
                 ws

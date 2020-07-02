@@ -103,5 +103,38 @@ impl Simulation {
     pub fn is_stable(&self) -> bool {
         self.process_queue.is_empty()
     }
+
+    pub fn set_value(&mut self, addr: usize, value: bool) {
+        self.net.wires[addr] = value;
+        for &d in self.dependencies[addr].iter() {
+            if !self.dirty[d] {
+                self.dirty[d] = true;
+                self.process_queue.push_back(d);
+            }
+        }
+    }
+}
+
+struct BinaryDisplayer<'a> {
+    net: &'a Net,
+}
+
+impl crate::netgraph::WireDisplayer for BinaryDisplayer<'_> {
+    fn display_wire(&self, wire: &[usize]) -> String {
+        let mut string = String::from("0b");
+        for &i in wire.iter().rev() {
+            string.push_str(&format!("{}", self.net.wires[i] as u8));
+        }
+        string
+    }
+}
+
+impl crate::netgraph::WireDisplayer for Simulation {
+    fn display_wire(&self, wire: &[usize]) -> String {
+        let displayer = BinaryDisplayer {
+            net: &self.net
+        };
+        displayer.display_wire(wire)
+    }
 }
 

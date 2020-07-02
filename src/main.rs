@@ -5,12 +5,14 @@ mod parsing;
 mod net;
 mod netgraph;
 mod link;
+mod interact;
 
 use nom;
 use parsed::*;
 use parsing::*;
 use net::*;
 use link::*;
+use interact::*;
 
 use std::collections::*;
 
@@ -83,7 +85,7 @@ module DFlipFlop(clk, d) -> (q) {
 
 module Top() -> () {
     wire a, b, c;
-    DFlipFlop some_gate_name(clk=a, d=b) -> (q=c);
+    DFlipFlop ff(clk=a, d=b) -> (q=c);
 }
 ";
 
@@ -123,4 +125,8 @@ fn main() {
 
     println!("{:#?}", sim);
     println!("{:#?}", netgraph);
+
+    if let Err(err) = run_interactive(&netgraph, &mut sim) {
+        println!("{:?}", err);
+    }
 }
