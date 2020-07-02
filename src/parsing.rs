@@ -19,7 +19,6 @@ fn bit(i: &str) -> IResult<&str, bool> {
 
 
 fn binary_number(i: &str) -> IResult<&str, Vec<bool>> {
-    // TODO look into bit ordering
     map(
         preceded(opt(tag("0b")), many1(bit)),
         |v| v.into_iter().rev().collect()
@@ -41,7 +40,6 @@ fn hex_digit(i: &str) -> IResult<&str, Vec<bool>> {
 }
 
 fn hex_number(i: &str) -> IResult<&str, Vec<bool>> {
-    // TODO look into (4bit) ordering
     map(
         preceded(tag("0x"), many1(hex_digit)),
         |v| v.into_iter().rev().flat_map(|v| v.into_iter()).collect()
@@ -420,4 +418,3 @@ pub fn module(i: &str) -> IResult<&str, Module> {
 pub fn modules(i: &str) -> IResult<&str, Vec<Module>> {
     many0(module)(i)
 }
-
