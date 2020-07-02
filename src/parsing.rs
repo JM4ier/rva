@@ -21,7 +21,7 @@ fn bit(i: &str) -> IResult<&str, bool> {
 fn binary_number(i: &str) -> IResult<&str, Vec<bool>> {
     // TODO look into bit ordering
     map(
-        preceded(tag("0b"), many1(bit)),
+        preceded(opt(tag("0b")), many1(bit)),
         |v| v.into_iter().rev().collect()
     )(i)
 }

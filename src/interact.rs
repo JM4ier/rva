@@ -31,7 +31,7 @@ fn command(i: &str) -> IResult<&str, Command>  {
                 |path| Command::Print(path)
             ),
             map(
-                tuple((tag("assign"), ws, path, ws, tag("="), ws, wire_constant)),
+                tuple((alt((tag("assign"), tag("set"))), ws, path, ws, tag("="), ws, wire_constant)),
                 |(_, _, path, _, _, _, constant)| Command::Edit(path, constant)
             ),
             map(
@@ -83,7 +83,7 @@ pub fn run_interactive(netgraph: &GraphModule, sim: &mut Simulation) -> io::Resu
                     }
                 },
                 Command::Simulate(mut count) => {
-                    while sim.is_stable() {
+                    while !sim.is_stable() {
                         sim.update();
                         if let Some(0) = count {
                             break;
