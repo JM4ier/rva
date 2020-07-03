@@ -53,7 +53,7 @@ pub fn wire_constant(i: &str) -> IResult<&str, Vec<bool>> {
     ))(i)
 }
 
-pub fn identifier(i: &str) -> IResult<&str, String> {
+pub fn local_name(i: &str) -> IResult<&str, String> {
     map(
         tuple((
                 take_while1(|c: char| c.is_ascii_alphabetic()), 
@@ -67,9 +67,23 @@ pub fn identifier(i: &str) -> IResult<&str, String> {
     )(i)
 }
 
+pub fn module_name(i: &str) -> IResult<&str, String> {
+    map(
+        tuple((
+                take_while1(|c: char| c.is_ascii_alphabetic() && c.is_ascii_uppercase()), 
+                take_while(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        )),
+        |(s1, s2): (&str, &str)| {
+            let mut owned = s1.to_string();
+            owned.push_str(s2);
+            owned
+        }
+    )(i)
+}
+
 #[test]
-fn identifier_test() {
-    assert_eq!(identifier("thisisaname"), Ok(("", "thisisaname".to_string())));
+fn local_name_test() {
+    assert_eq!(local_name("thisisaname"), Ok(("", "thisisaname".to_string())));
 }
 
 pub fn number(i: &str) -> IResult<&str, usize> {
@@ -120,10 +134,10 @@ fn index_test() {
 fn wirepart(i: &str) -> IResult<&str, WirePart> {
     alt((
             map(
-                tuple((identifier, range)),
+                tuple((local_name, range)),
                 |(id, range)| WirePart::ranged(id, range.0, range.1)
             ),
-            map(identifier,
+            map(local_name,
                 |id| WirePart::total(id),
             ),
             map(
@@ -168,9 +182,9 @@ pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F, delimiter
 
 #[test]
 fn list_test() {
-    assert_eq!(list(identifier, ",")("a, b, c"), Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect())));
-    assert_eq!(list(identifier, ",")(")"), Ok((")", vec![])));
-    assert_eq!(list(identifier, ",")("a, b), c"), Ok(("), c", vec![String::from("a"), String::from("b")])));
+    assert_eq!(list(local_name, ",")("a, b, c"), Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect())));
+    assert_eq!(list(local_name, ",")(")"), Ok((")", vec![])));
+    assert_eq!(list(local_name, ",")("a, b), c"), Ok(("), c", vec![String::from("a"), String::from("b")])));
 }
 
 fn wirebus(i: &str) -> IResult<&str, WireBus> {
@@ -199,7 +213,7 @@ fn wire(i: &str) -> IResult<&str, Wire> {
     alt((
             map(
                 tuple((
-                        identifier,
+                        local_name,
                         index,
                 )),
                 |(name, width)| Wire {
@@ -209,7 +223,7 @@ fn wire(i: &str) -> IResult<&str, Wire> {
                 }
             ),
             map(
-                identifier,
+                local_name,
                 |name| Wire { 
                     name, 
                     width: 1, 
@@ -262,7 +276,7 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
     alt((
             map(
                 tuple((
-                        identifier,
+                        local_name,
                         ws,
                         tag("="),
                         ws,
@@ -271,7 +285,7 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
                 |(name, _, _, _, bus)| Connection { local: bus, module: name }
             ),
             map(
-                identifier,
+                local_name,
                 |name| Connection { local: vec![WirePart::total(name.to_string())], module: name },
             )
     ))(i)
@@ -297,9 +311,9 @@ fn instance(i: &str) -> IResult<&str, Instance> {
     map(
         tuple((
                 ws,
-                identifier,
+                local_name,
                 ws,
-                identifier,
+                local_name,
                 ws,
                 delimited(
                     tag("("),
@@ -352,7 +366,7 @@ pub fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
                 ws,
                 tag("module"),
                 ws,
-                identifier,
+                module_name,
                 ws,
                 delimited(
                     tag("("),

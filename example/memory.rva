@@ -1,0 +1,55 @@
+module SRLatch(s, r) -> (q) {
+    wire notq;
+    Nor nora(a=r, b=notq) -> (out=q);
+    Nor norb(a=s, b=q) -> (out=notq);
+}
+
+module DLatch(clk, reset, d) -> (q) {
+    wire s, r, invd, invreset, invdorreset;
+
+    Not not_d(in=d) -> (out=invd);
+    Not not_reset(in=reset) -> (out=invreset);
+
+    Or or_idir(a=invd, b=reset) -> (out=invdorreset);
+
+    And4 and_s(in={d, clk, invreset, 1}) -> (out=s);
+    And and_r(a=invdorreset, b=clk) -> (out=r);
+
+    SRLatch sr(s, r) -> (q);
+}
+
+module DFlipFlop(clk, reset, d) -> (q) {
+    wire invclk;
+    wire slaved;
+
+    Not not_clk(in=clk) -> (out=invclk);
+
+    DLatch master(clk=invclk, d, reset) -> (q=slaved);
+    DLatch slave(clk, d=slaved, reset) -> (q);
+}
+
+module Reg2(clk, reset, d[2]) -> (q[2]) {
+    DFlipFlop ff0(clk, reset, d=d[0]) -> (q=q[0]);
+    DFlipFlop ff1(clk, reset, d=d[1]) -> (q=q[1]);
+}
+
+module Reg4(clk, reset, d[4]) -> (q[4]) {
+    Reg2 reg0(clk, reset, d=d[0:1]) -> (q=q[0:1]);
+    Reg2 reg1(clk, reset, d=d[2:3]) -> (q=q[2:3]);
+}
+
+module Reg8(clk, reset, d[8]) -> (q[8]) {
+    Reg4 reg0(clk, reset, d=d[0:3]) -> (q=q[0:3]);
+    Reg4 reg1(clk, reset, d=d[4:7]) -> (q=q[4:7]);
+}
+
+module Reg16(clk, reset, d[16]) -> (q[16]) {
+    Reg8 reg0(clk, reset, d=d[00:07]) -> (q=q[00:07]);
+    Reg8 reg1(clk, reset, d=d[08:15]) -> (q=q[08:15]);
+}
+
+module Reg32(clk, reset, d[32]) -> (q[32]) {
+    Reg16 reg0(clk, reset, d=d[00:15]) -> (q=q[00:15]);
+    Reg16 reg1(clk, reset, d=d[16:32]) -> (q=q[16:32]);
+}
+

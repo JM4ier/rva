@@ -1,0 +1,48 @@
+module Nor (a, b) -> (out) {}
+
+module Not (in) -> (out) {
+    Nor inv(a=in, b=in) -> (out);
+}
+
+module And(a, b) -> (out) {
+    wire inva, invb;
+
+    Not not_a(in=a) -> (out=inva);
+    Not not_b(in=b) -> (out=invb);
+
+    Nor nor(a=inva, b=invb) -> (out);
+}
+
+module And4(in[4]) -> (out) {
+    wire tmp[2];
+    And and_0(a=in[0], b=in[1]) -> (out=tmp[0]);
+    And and_1(a=in[2], b=in[3]) -> (out=tmp[1]);
+    And and_2(a=tmp[0], b=tmp[1]) -> (out);
+}
+
+module Or(a, b) -> (out) {
+    wire norab;
+    Nor ng(a, b) -> (out=norab);
+    Not inv(in=norab) -> (out);
+}
+
+module Nand(a, b) -> (out) {
+    wire andab;
+    And and_(a, b) -> (out=andab);
+    Not inv(in=andab) -> (out);
+}
+
+module Xnor(a, b) -> (out) {
+    wire a_and_b, nor_a_b;
+    And and(a, b) -> (out=a_and_b);
+    Nor nor(a, b) -> (out=nor_a_b);
+    Or or(a=a_and_b, b=nor_a_b) -> (out);
+}
+
+module Xor(a, b) -> (out) {
+    wire a_xnor_b;
+    Xnor xnor(a, b) -> (out=a_xnor_b);
+    Not not(in=a_xnor_b) -> (out);
+}
+
+

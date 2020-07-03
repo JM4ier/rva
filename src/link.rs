@@ -5,17 +5,29 @@ use crate::net::*;
 use std::collections::*;
 
 #[derive(Debug)]
-pub enum LinkError {
+pub enum ErrorKind {
     Recursion,
     WireMismatch,
-    MismatchedWireSize(String),
-    DuplicateWireName(String),
+    MismatchedWireSize,
+    DuplicateWireName,
     MissingIOWires,
-    UnknownModule(String),
-    UnknownWire(String),
-    IncorrectWireKind(String),
-    MultipleDrivers(String),
-    NoDriver(String),
+    UnknownModule,
+    UnknownWire,
+    IncorrectWireKind,
+    MultipleDrivers,
+    NoDriver,
+}
+
+#[derive(Debug)]
+pub struct LinkError {
+    pub message: String, 
+    pub kind: ErrorKind,
+}
+
+impl LinkError {
+    fn new(kind: ErrorKind, message: String) -> Self {
+        Self { message, kind }
+    }
 }
 
 pub type LinkResult<T> = Result<T, LinkError>;
@@ -64,7 +76,7 @@ impl<'a> Linker<'a> {
                             self.drive_count[idx][i] += modify_count as usize;
                         }
                     } else {
-                        return Err(LinkError::UnknownWire(format!(
+                        return Err(LinkError::new(ErrorKind::UnknownWire, format!(
                                     "In module {}: No local wire with name {}", self.module.name, &name)));
                     }
 
@@ -103,18 +115,18 @@ impl<'a> Linker<'a> {
             let child_wire_idx = if let Some(idx) = module.locals.iter().position(|c| &c.name == child_wire_name) {
                 let child = &module.locals[idx];
                 if child.kind != io_type {
-                    return Err(LinkError::IncorrectWireKind(format!("")));
+                    return Err(LinkError::new(ErrorKind::IncorrectWireKind, format!("")));
                 }
                 idx
             } else {
-                return Err(LinkError::UnknownWire(format!(
+                return Err(LinkError::new(ErrorKind::UnknownWire,format!(
                             "In module {} in module instantiation {}: No I/O wire with name {}", self.module.name, &instance.name, &child_wire_name)));
             };
 
             child_allocated_wires[child_wire_idx] = self.alloc_wirebus(&channel.local, io_type == WireKind::Output)?;
 
             if child_allocated_wires[child_wire_idx].len() != module.locals[child_wire_idx].width {
-                return Err(LinkError::MismatchedWireSize(
+                return Err(LinkError::new(ErrorKind::MismatchedWireSize,
                         format!("Wire {} of module {} has a wire size of {}, but passed a wire size of {}", 
                             &child_wire_name,  &module.name, module.locals[child_wire_idx].width, child_allocated_wires[child_wire_idx].len())));
             }
@@ -125,7 +137,7 @@ impl<'a> Linker<'a> {
 
     pub fn link(&mut self) -> Result<GraphModule, LinkError> {
         if self.descent.contains(&self.module.name) {
-            return Err(LinkError::Recursion);
+            return Err(LinkError::new(ErrorKind::Recursion, format!("Module {} has a recursive definition", self.module.name)));
         }
 
         for (idx, wire) in self.module.locals.iter().enumerate() {
@@ -140,7 +152,7 @@ impl<'a> Linker<'a> {
             }
         }
 
-        if self.module.name == "nor" {
+        if self.module.name == "Nor" {
             let a = self.allocated_wires[0][0];
             let b = self.allocated_wires[1][0];
             let out = self.allocated_wires[2][0];
@@ -181,7 +193,8 @@ impl<'a> Linker<'a> {
                         assert_eq!(child_allocated_wires[i].len(), 0);
                     } else {
                         if child_allocated_wires[i].len() == 0 {
-                            return Err(LinkError::MissingIOWires);
+                            return Err(LinkError::new(ErrorKind::MissingIOWires, 
+                                    format!("Wire {} in Instance {} in Module {} has not been assigned", wire.name, instance.name, self.module.name)));
                         } 
                         assert_eq!(child_allocated_wires[i].len(), wire.width);
                     }
@@ -194,7 +207,7 @@ impl<'a> Linker<'a> {
                 instances.push(graph_instance);
                 self.descent.remove(&self.module.name);
             } else {
-                return Err(LinkError::UnknownModule(format!(
+                return Err(LinkError::new(ErrorKind::UnknownModule,format!(
                             "In module {}: No module with name {}", self.module.name, &instance.module)));
             }
         }
@@ -208,12 +221,12 @@ impl<'a> Linker<'a> {
 
             for (bit_idx, bit) in self.drive_count[wire_idx].iter().enumerate() {
                 if *bit > expected_dc {
-                    return Err(LinkError::MultipleDrivers(format!(
+                    return Err(LinkError::new(ErrorKind::MultipleDrivers,format!(
                                 "Bit {} in wire {} in module {} is being driven {} times, expected {} times.",
                                 bit_idx, &wire.name, self.module.name, bit, expected_dc
                     )));
                 } else if *bit < expected_dc {
-                    return Err(LinkError::NoDriver(format!(
+                    return Err(LinkError::new(ErrorKind::NoDriver,format!(
                                 "Bit {} in wire {} in module {} is not being driven.",
                                 bit_idx, &wire.name, self.module.name
                     )));

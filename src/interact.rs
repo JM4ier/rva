@@ -21,7 +21,7 @@ enum Command {
 }
 
 fn path(i: &str) -> IResult<&str, Vec<String>> {
-    list(identifier, ".")(i)
+    list(local_name, ".")(i)
 }
 
 fn command(i: &str) -> IResult<&str, Command>  {
@@ -35,7 +35,7 @@ fn command(i: &str) -> IResult<&str, Command>  {
                 |(_, _, path, _, _, _, constant)| Command::Edit(path, constant)
             ),
             map(
-                alt((tag("terminate"), tag("stop"), tag("quit"))),
+                alt((tag("terminate"), tag("stop"), tag("quit"), tag("exit"))),
                 |_| Command::Terminate,
             ),
             map(

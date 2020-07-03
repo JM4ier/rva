@@ -42,10 +42,7 @@ fn main() {
         println!("{}", entry.path().display());
     }
 
-    let nor = module("module nor(a, b) -> (out) {}").unwrap().1;
-    let (rest, mut mods) = modules(&source).unwrap();
-
-    mods.push(nor);
+    let (rest, mods) = modules(&source).unwrap();
 
     let mut mod_map = HashMap::new();
     for m in mods.into_iter() {

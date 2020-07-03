@@ -1,3 +1,3 @@
 module Top() -> () {
-	DFlipFlop ff(clk=0, d=0) -> (q=0);
+	Reg4 reg(clk=0, d=0000, reset=0) -> (q=0001);
 }
