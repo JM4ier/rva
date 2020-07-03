@@ -44,6 +44,10 @@ fn main() {
 
     let (rest, mods) = modules(&source).unwrap();
 
+    if rest.len() > 0 {
+        println!("Warning: Not everything of the source file has been parsed:\n{}", rest);
+    }
+
     let mut mod_map = HashMap::new();
     for m in mods.into_iter() {
         let name = m.name.to_owned();

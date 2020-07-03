@@ -4,6 +4,7 @@ module SRLatch(s, r) -> (q) {
     Nor norb(a=s, b=q) -> (out=notq);
 }
 
+// D-Latch with synchronous, active-high reset
 module DLatch(clk, reset, d) -> (q) {
     wire s, r, invd, invreset, invdorreset;
 

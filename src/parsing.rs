@@ -153,9 +153,17 @@ fn wirepart_test() {
     assert_eq!(wirepart("test[1:2] other stuff"), Ok((" other stuff", WirePart::ranged("test".to_string(), 1, 2))));
 }
 
+fn comment(i: &str) -> IResult<&str, &str> {
+    preceded(
+        tag("//"),
+        take_until("\n"),
+    )(i)
+}
+
 pub fn ws(i: &str) -> IResult<&str, &str> {
-    take_while(
-        |c: char| c.is_ascii_whitespace()
+    terminated(
+        take_while(|c: char| c.is_ascii_whitespace()),
+        opt(comment),
     )(i)
 }
 
@@ -407,7 +415,7 @@ pub fn module_body(i: &str) -> IResult<&str, Vec<BodyOption>> {
             many0(delimited(ws, body_option, ws)),
             ws,
         ),
-        tag("}"),
+        tuple((tag("}"), ws))
     )(i)
 }
 
