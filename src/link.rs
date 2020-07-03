@@ -49,25 +49,37 @@ impl<'a> Linker<'a> {
     }
 }
 
-impl Linker<'_> {
-    fn alloc_wirebus(&mut self, bus: &WireBus, modify_count: bool) -> LinkResult<Vec<usize>> {
+impl<'a> Linker<'a> {
+    fn alloc_wirebus(&mut self, bus: &'a WireBus, modify_count: bool) -> LinkResult<Vec<usize>> {
         let mut alloc_bus = Vec::new();
         for part in bus.iter() {
-            if let Some((idx, wire)) = self.find_wire(&part.name) {
-                let range = if let WireRange::Ranged{from, to} = part.range {
-                    from..(to+1)
-                } else {
-                    0..wire.width
-                };
-                for i in range {
-                    alloc_bus.push(self.allocated_wires[idx][i]);
-                    if modify_count {
-                        self.drive_count.get_mut(&part.name).unwrap()[i] += 1;
+            match part {
+                WirePart::Local{name, range} => {
+                    if let Some((idx, wire)) = self.find_wire(&name) {
+                        let range = if let WireRange::Ranged{from, to} = range {
+                            *from..(to+1)
+                        } else {
+                            0..wire.width
+                        };
+                        for i in range {
+                            alloc_bus.push(self.allocated_wires[idx][i]);
+                            if modify_count {
+                                self.drive_count.get_mut(&name).unwrap()[i] += 1;
+                            }
+                        }
+                    } else {
+                        return Err(LinkError::UnknownWire(format!(
+                                    "In module {}: No local wire with name {}", self.module.name, &name)));
+                    }
+
+                },
+                WirePart::Constant(constant) => {
+                    let begin_const = self.net.allocate_wire(constant.len());
+                    for (idx, &bit) in constant.iter().enumerate() {
+                        alloc_bus.push(begin_const+idx);
+                        self.net.set_value(begin_const+idx, bit);
                     }
                 }
-            } else {
-                return Err(LinkError::UnknownWire(format!(
-                            "In module {}: No local wire with name {}", self.module.name, &part.name)));
             }
         }
         Ok(alloc_bus)
@@ -83,11 +95,10 @@ impl Linker<'_> {
     }
 
     fn link_io(&mut self, 
-        module: &Module, 
-        instance: &Instance, 
+        module: &'a Module, 
+        instance: &'a Instance, 
         io_type: WireKind, 
-        child_allocated_wires: &mut Vec<Vec<usize>>,
-        drive_count: &mut HashMap<&String, Vec<usize>>) -> Result<(), LinkError> {
+        child_allocated_wires: &mut Vec<Vec<usize>>) -> Result<(), LinkError> {
 
         let io = if io_type == WireKind::Input {
             &instance.inputs
@@ -105,7 +116,7 @@ impl Linker<'_> {
                 idx
             } else {
                 return Err(LinkError::UnknownWire(format!(
-                "In module {} in module instantiation {}: No I/O wire with name {}", self.module.name, &instance.name, &child_wire_name)));
+                            "In module {} in module instantiation {}: No I/O wire with name {}", self.module.name, &instance.name, &child_wire_name)));
             };
 
             child_allocated_wires[child_wire_idx] = self.alloc_wirebus(&channel.local, io_type == WireKind::Output)?;
@@ -173,8 +184,8 @@ impl Linker<'_> {
         for instance in self.module.instances.iter() {
             if let Some(module) = self.modules.get(&instance.module) {
                 let mut child_allocated_wires = vec![Vec::new(); module.locals.len()];
-                self.link_io(module, instance, WireKind::Input, &mut child_allocated_wires, &mut drive_count)?;
-                self.link_io(module, instance, WireKind::Output, &mut child_allocated_wires, &mut drive_count)?;
+                self.link_io(module, instance, WireKind::Input, &mut child_allocated_wires)?;
+                self.link_io(module, instance, WireKind::Output, &mut child_allocated_wires)?;
 
                 // check if all I/O has been assigned
                 for (i, wire) in module.locals.iter().enumerate() {

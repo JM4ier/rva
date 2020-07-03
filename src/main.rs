@@ -84,8 +84,7 @@ module DFlipFlop(clk, d) -> (q) {
 }
 
 module Top() -> () {
-    wire a, b, c;
-    DFlipFlop ff(clk=a, d=b) -> (q=c);
+    DFlipFlop ff(clk=0, d=0) -> (q=0);
 }
 ";
 

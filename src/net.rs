@@ -41,6 +41,10 @@ impl Net {
         self.gates.push(NorGate { in1, in2, out });
     }
 
+    pub fn set_value(&mut self, idx: usize, val: bool) {
+        self.wires[idx] = val;
+    }
+
     pub fn new() -> Self {
         Self {
             wires: Vec::new(),

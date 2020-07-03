@@ -50,7 +50,7 @@ pub fn run_interactive(netgraph: &GraphModule, sim: &mut Simulation) -> io::Resu
     let stdin = io::stdin();
 
     loop {
-        print!("Type something: ");
+        print!("> ");
         io::stdout().flush();
 
         input.clear();

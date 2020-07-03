@@ -126,6 +126,10 @@ fn wirepart(i: &str) -> IResult<&str, WirePart> {
             map(identifier,
                 |id| WirePart::total(id),
             ),
+            map(
+                wire_constant,
+                |c| WirePart::constant(c)
+            ),
     ))(i)
 }
 

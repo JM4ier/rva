@@ -65,25 +65,28 @@ pub enum WireRange {
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub struct WirePart {
-    pub name: String,
-    pub range: WireRange,
+pub enum WirePart {
+    Local{name: String, range: WireRange},
+    Constant(Vec<bool>),
 }
 
 pub type WireBus = Vec<WirePart>;
 
 impl WirePart {
     pub fn total(name: String) -> Self {
-        Self {
+        Self::Local {
             name,
             range: WireRange::Total,
         }
     }
     pub fn ranged(name: String, from: usize, to: usize) -> Self {
-        Self {
+        Self::Local {
             name,
             range: WireRange::Ranged {from, to},
         }
+    }
+    pub fn constant(constant: Vec<bool>) -> Self {
+        Self::Constant(constant)
     }
 }
 
