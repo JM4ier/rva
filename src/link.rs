@@ -23,27 +23,25 @@ pub type LinkResult<T> = Result<T, LinkError>;
 pub struct Linker<'a> {
     module: &'a Module,
     allocated_wires: &'a mut Vec<Vec<usize>>,
-    modules: &'a HashMap<String, Module>,
-    drive_count: HashMap<&'a String, Vec<usize>>,
-    heritage: &'a mut HashSet<String>,
+    module_store: &'a HashMap<String, Module>,
+    drive_count: Vec<Vec<usize>>,
+    descent: &'a mut HashSet<String>,
     net: &'a mut Net,
 }
 
 impl<'a> Linker<'a> {
-    pub fn new(module: &'a Module, allocated_wires: &'a mut Vec<Vec<usize>>, modules: &'a HashMap<String, Module>, heritage: &'a mut HashSet<String>, net: &'a mut Net) -> LinkResult<Self> {
-        let mut drive_count = HashMap::new();
-        for wire in module.locals.iter() {
-            if let Some(_) = drive_count.insert(&wire.name, vec![0; wire.width]) {
-                return Err(LinkError::DuplicateWireName(format!("multiple wires with same name in module {}: {}", module.name, wire.name)));
-            }
+    pub fn new(module: &'a Module, allocated_wires: &'a mut Vec<Vec<usize>>, module_store: &'a HashMap<String, Module>, descent: &'a mut HashSet<String>, net: &'a mut Net) -> LinkResult<Self> {
+        let mut drive_count = Vec::with_capacity(module.locals.len());
+        for (idx, wire) in module.locals.iter().enumerate() {
+            drive_count.push(vec![0; wire.width]);
         }
 
         Ok(Self {
             module, 
             allocated_wires,
-            modules,
+            module_store,
             drive_count,
-            heritage,
+            descent,
             net
         })
     }
@@ -63,9 +61,7 @@ impl<'a> Linker<'a> {
                         };
                         for i in range {
                             alloc_bus.push(self.allocated_wires[idx][i]);
-                            if modify_count {
-                                self.drive_count.get_mut(&name).unwrap()[i] += 1;
-                            }
+                            self.drive_count[idx][i] += modify_count as usize;
                         }
                     } else {
                         return Err(LinkError::UnknownWire(format!(
@@ -94,16 +90,12 @@ impl<'a> Linker<'a> {
         None
     }
 
-    fn link_io(&mut self, 
-        module: &'a Module, 
-        instance: &'a Instance, 
-        io_type: WireKind, 
-        child_allocated_wires: &mut Vec<Vec<usize>>) -> Result<(), LinkError> {
+    fn link_io(&mut self, module: &'a Module, instance: &'a Instance, io_type: WireKind, child_allocated_wires: &mut Vec<Vec<usize>>) 
+    -> Result<(), LinkError> {
 
-        let io = if io_type == WireKind::Input {
-            &instance.inputs
-        } else {
-            &instance.outputs
+        let io = match io_type {
+            WireKind::Input => &instance.inputs,
+            _ => &instance.outputs,
         };
 
         for channel in io.iter() {
@@ -132,15 +124,11 @@ impl<'a> Linker<'a> {
     }
 
     pub fn link(&mut self) -> Result<GraphModule, LinkError> {
-        if self.heritage.contains(&self.module.name) {
+        if self.descent.contains(&self.module.name) {
             return Err(LinkError::Recursion);
         }
 
-        let mut drive_count = HashMap::new();
         for (idx, wire) in self.module.locals.iter().enumerate() {
-            if let Some(_) = drive_count.insert(&wire.name, vec![0; wire.width]) {
-                return Err(LinkError::DuplicateWireName(wire.name.to_owned()));
-            }
             if wire.kind == WireKind::Private {
                 // allocate space only for private wires, I/O is already allocated by the
                 // parent module
@@ -160,7 +148,7 @@ impl<'a> Linker<'a> {
 
             return Ok(GraphModule {
                 module_name: self.module.name.to_owned(),
-                name: String::from("<root>"),
+                name: String::from("<nor>"),
                 instances: Vec::new(),
                 locals: vec![
                     GraphWire {
@@ -182,7 +170,7 @@ impl<'a> Linker<'a> {
         let mut instances = Vec::new();
 
         for instance in self.module.instances.iter() {
-            if let Some(module) = self.modules.get(&instance.module) {
+            if let Some(module) = self.module_store.get(&instance.module) {
                 let mut child_allocated_wires = vec![Vec::new(); module.locals.len()];
                 self.link_io(module, instance, WireKind::Input, &mut child_allocated_wires)?;
                 self.link_io(module, instance, WireKind::Output, &mut child_allocated_wires)?;
@@ -199,12 +187,12 @@ impl<'a> Linker<'a> {
                     }
                 }
 
-                self.heritage.insert(self.module.name.to_owned());
-                let mut module_linker = Linker::new(module, &mut child_allocated_wires, self.modules, self.heritage, self.net)?;
+                self.descent.insert(self.module.name.to_owned());
+                let mut module_linker = Linker::new(module, &mut child_allocated_wires, self.module_store, self.descent, self.net)?;
                 let mut graph_instance = module_linker.link()?;
                 graph_instance.name = instance.name.to_owned();
                 instances.push(graph_instance);
-                self.heritage.remove(&self.module.name);
+                self.descent.remove(&self.module.name);
             } else {
                 return Err(LinkError::UnknownModule(format!(
                             "In module {}: No module with name {}", self.module.name, &instance.module)));
@@ -218,14 +206,13 @@ impl<'a> Linker<'a> {
                 1
             };
 
-            for (bit_idx, bit) in drive_count.get(&wire.name).unwrap().iter().enumerate() {
+            for (bit_idx, bit) in self.drive_count[wire_idx].iter().enumerate() {
                 if *bit > expected_dc {
                     return Err(LinkError::MultipleDrivers(format!(
                                 "Bit {} in wire {} in module {} is being driven {} times, expected {} times.",
                                 bit_idx, &wire.name, self.module.name, bit, expected_dc
                     )));
                 } else if *bit < expected_dc {
-                    continue; // FIXME
                     return Err(LinkError::NoDriver(format!(
                                 "Bit {} in wire {} in module {} is not being driven.",
                                 bit_idx, &wire.name, self.module.name
