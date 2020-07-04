@@ -26,6 +26,13 @@ module Or(a, b) -> (out) {
     Not inv(in=norab) -> (out);
 }
 
+module Or4(in[4]) -> (out) {
+    wire tmp[2];
+    Or or_0(a=in[0], b=in[1]) -> (out=tmp[0]);
+    Or or_1(a=in[2], b=in[3]) -> (out=tmp[1]);
+    Or or_2(a=tmp[0], b=tmp[1]) -> (out);
+}
+
 module Nand(a, b) -> (out) {
     wire andab;
     And and_(a, b) -> (out=andab);
@@ -45,4 +52,9 @@ module Xor(a, b) -> (out) {
     Not not(in=a_xnor_b) -> (out);
 }
 
-
+module Xor4(in[4]) -> (out) {
+    wire tmp[2];
+    Xor xor_0(a=in[0], b=in[1]) -> (out=tmp[0]);
+    Xor xor_1(a=in[2], b=in[3]) -> (out=tmp[1]);
+    Xor xor_2(a=tmp[0], b=tmp[1]) -> (out);
+}
