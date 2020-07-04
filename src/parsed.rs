@@ -1,7 +1,3 @@
-use crate::net::*;
-
-use std::collections::*;
-
 #[derive(PartialEq, Eq, Debug)]
 pub enum WireKind {
     /// Only accessible to the local scope
@@ -14,7 +10,6 @@ pub enum WireKind {
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Wire {
-    /// Name of wire
     pub name: String,
 
     /// number of bits this wire can hold
@@ -28,21 +23,15 @@ pub struct Connection {
     /// Local wires
     pub local: WireBus,
 
-    /// Instanced wire
+    /// Instanced wire name
     pub module: String,
 }
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Instance {
-    /// Name of the module that is being instanced
     pub module: String,
-    /// Name that is given to this instance
     pub name: String,
-
-    /// Input connections
     pub inputs: Vec<Connection>,
-
-    /// Output connections
     pub outputs: Vec<Connection>,
 }
 

@@ -1,5 +1,3 @@
-#![allow(dead_code, unused_variables, unused_imports)]
-
 mod parsed;
 mod parsing;
 mod net;
@@ -7,10 +5,10 @@ mod netgraph;
 mod link;
 mod interact;
 
-use nom;
 use parsed::*;
 use parsing::*;
 use net::*;
+use netgraph::*;
 use link::*;
 use interact::*;
 
@@ -24,12 +22,10 @@ fn is_source_file(entry: &DirEntry) -> bool {
     entry.file_name().to_str().map(|s| s.ends_with(".rva")).unwrap_or(false)
 }
 
-fn main() {
-
+fn read_source() -> String {
     let mut source = String::new();
 
-    println!("Processing files: ");
-    
+    println!("Reading files: ");
     for entry in WalkDir::new("."){
         let entry = entry.unwrap();
         if !is_source_file(&entry) {
@@ -41,13 +37,19 @@ fn main() {
 
         println!("{}", entry.path().display());
     }
+    println!();
+    source
+}
 
+fn parse(source: &String) -> Vec<Module> {
     let (rest, mods) = modules(&source).unwrap();
-
     if rest.len() > 0 {
-        println!("Warning: Not everything of the source file has been parsed:\n{}", rest);
+        eprintln!("Warning: Not everything of the source file has been parsed:\n{}", rest);
     }
+    mods
+}
 
+fn build(mods: Vec<Module>) -> (GraphModule, Simulation) {
     let mut mod_map = HashMap::new();
     for m in mods.into_iter() {
         let name = m.name.to_owned();
@@ -59,18 +61,29 @@ fn main() {
     let mut net = Net::new();
     let mut descent = HashSet::new();
     let mut wires = vec![vec![]; 3];
-    let top = mod_map.get("Top").unwrap();
+    let top = mod_map.get("Top").expect("No 'Top' Module found");
 
     let mut linker = Linker::new(top, &mut wires, &mod_map, &mut descent, &mut net).unwrap();
-    let netgraph = linker.link().unwrap();
+    let graph = linker.link().unwrap();
 
-    let mut sim = Simulation::new(net);
+    let sim = Simulation::new(net);
 
-    while !sim.is_stable() {
-        sim.update();
-    }
+    (graph, sim)
+}
 
-    if let Err(err) = run_interactive(&netgraph, &mut sim) {
-        println!("{:?}", err);
+fn start_interactive(graph: &GraphModule, sim: &mut Simulation) {
+    println!("Starting interactive mode:");
+    let interactive_result = run_interactive(&graph, sim);
+    match interactive_result {
+        Err(e) => eprintln!("Error while running interactive: {:?}", e),
+        Ok(_) => println!("Goodbye!"),
     }
 }
+
+fn main() {
+    let source = read_source();
+    let mods = parse(&source);
+    let (graph, mut simulation) = build(mods);
+    start_interactive(&graph, &mut simulation);
+}
+

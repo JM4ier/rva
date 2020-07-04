@@ -4,7 +4,6 @@ use nom::{
     combinator::*,
     sequence::*,
     branch::*,
-    multi::*,
 };
 
 use std::io::{self, prelude::*};
@@ -21,17 +20,28 @@ enum Command {
 }
 
 fn path(i: &str) -> IResult<&str, Vec<String>> {
-    list(local_name, ".")(i)
+    list(field_name, ".")(i)
 }
 
 fn command(i: &str) -> IResult<&str, Command>  {
     alt((
             map(
-                preceded(tuple((tag("print"), ws)), path),
+                preceded(
+                    tuple((tag("print"), whitespace)),
+                    path
+                ),
                 |path| Command::Print(path)
             ),
             map(
-                tuple((alt((tag("assign"), tag("set"))), ws, path, ws, tag("="), ws, wire_constant)),
+                tuple((
+                        alt((tag("assign"), tag("set"))), 
+                        whitespace, 
+                        path, 
+                        whitespace, 
+                        tag("="), 
+                        whitespace, 
+                        wire_constant
+                )),
                 |(_, _, path, _, _, _, constant)| Command::Edit(path, constant)
             ),
             map(
@@ -39,9 +49,9 @@ fn command(i: &str) -> IResult<&str, Command>  {
                 |_| Command::Terminate,
             ),
             map(
-                tuple((tag("run"), ws, opt(number))),
-                |(_, _, no)| Command::Simulate(no)
-            )
+                tuple((tag("run"), whitespace, opt(number))),
+                |(_, _, repetitions)| Command::Simulate(repetitions)
+            ),
     ))(i)
 }
 
@@ -51,7 +61,7 @@ pub fn run_interactive(netgraph: &GraphModule, sim: &mut Simulation) -> io::Resu
 
     loop {
         print!("> ");
-        io::stdout().flush();
+        io::stdout().flush()?;
 
         input.clear();
         stdin.read_line(&mut input)?;
@@ -63,23 +73,22 @@ pub fn run_interactive(netgraph: &GraphModule, sim: &mut Simulation) -> io::Resu
                 Command::Print(path) => {
                     let display = &netgraph.display_path(&path, sim);
                     match display {
-                        Ok(s) => println!("\n{}", s),
-                        Err(e) => eprintln!("\n\nError: {:?}\n\n", e),
+                        Ok(s) => println!("{}", s),
+                        Err(e) => eprintln!("Error: {:?}", e),
                     }
                 },
                 Command::Edit(path, values) => {
                     let addr = &netgraph.wire_addr(&path);
                     match addr {
                         Ok(addr) => {
-                            let it = addr.iter().zip(values.iter());
-                            for (i, (&addr, &val)) in it.enumerate() {
+                            for (&addr, &val) in addr.iter().zip(values.iter()) {
                                 sim.set_value(addr, val);
                             }
                             if values.len() < addr.len() {
-                                println!("Warning, passed value has {} bits, but wire needs {} bits.", values.len(), addr.len());
+                                eprintln!("Warning, passed value has {} bits, but wire needs {} bits.", values.len(), addr.len());
                             }
                         },
-                        Err(e) => eprintln!("\n\nError: {:?}\n\n", e),
+                        Err(e) => eprintln!("Error: {:?}", e),
                     }
                 },
                 Command::Simulate(mut count) => {

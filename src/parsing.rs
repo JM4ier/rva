@@ -21,6 +21,7 @@ fn bit(i: &str) -> IResult<&str, bool> {
 fn binary_number(i: &str) -> IResult<&str, Vec<bool>> {
     map(
         preceded(opt(tag("0b")), many1(bit)),
+        // MSB is typically written left(low index), so reverse order to match little endian
         |v| v.into_iter().rev().collect()
     )(i)
 }
@@ -29,14 +30,22 @@ fn hex_digit(i: &str) -> IResult<&str, Vec<bool>> {
     map (
         take_while_m_n(1, 1, |c: char| c.is_digit(16)), 
         |s| {
-            let value = u8::from_str_radix(s, 16).unwrap();
-            let mut vec = vec![false; 4];
-            for bit in 0..4 {
-                vec[bit] = value >> bit > 0;
+            let digit = u8::from_str_radix(s, 16).unwrap();
+            let mut bits = vec![false; 4];
+            for idx in 0..4 {
+                bits[idx] = (digit >> idx)&1 > 0;
             }
-            vec
+            bits
         }
     )(i)
+}
+
+#[test]
+fn hex_digit_test() {
+    assert_eq!(hex_digit("F"), Ok(("", vec![true; 4])));
+    assert_eq!(hex_digit("1"), Ok(("", vec![true, false, false, false])));
+    assert_eq!(hex_digit("2"), Ok(("", vec![false, true, false, false])));
+    assert_eq!(hex_digit("7"), Ok(("", vec![true, true, true, false])));
 }
 
 fn hex_number(i: &str) -> IResult<&str, Vec<bool>> {
@@ -46,14 +55,26 @@ fn hex_number(i: &str) -> IResult<&str, Vec<bool>> {
     )(i)
 }
 
+#[test]
+fn hex_number_test() {
+    assert_eq!(hex_number("0x42"), Ok(("", vec![false, true, false, false, false, false, true, false])));
+    match hex_number("0xC0FFEE") {
+        Err(e) => assert!(false, "Couldn't parse 0xC0FFEE"),
+        Ok((rest, num)) => {
+            assert_eq!(rest, "");
+            assert_eq!(num.len(), 24);
+        },
+    }
+}
+
 pub fn wire_constant(i: &str) -> IResult<&str, Vec<bool>> {
     alt((
-        binary_number,
-        hex_number,
+            binary_number,
+            hex_number,
     ))(i)
 }
 
-pub fn local_name(i: &str) -> IResult<&str, String> {
+pub fn field_name(i: &str) -> IResult<&str, String> {
     map(
         tuple((
                 take_while1(|c: char| c.is_ascii_alphabetic()), 
@@ -82,8 +103,8 @@ pub fn module_name(i: &str) -> IResult<&str, String> {
 }
 
 #[test]
-fn local_name_test() {
-    assert_eq!(local_name("thisisaname"), Ok(("", "thisisaname".to_string())));
+fn field_name_test() {
+    assert_eq!(field_name("thisisaname"), Ok(("", "thisisaname".to_string())));
 }
 
 pub fn number(i: &str) -> IResult<&str, usize> {
@@ -134,10 +155,10 @@ fn index_test() {
 fn wirepart(i: &str) -> IResult<&str, WirePart> {
     alt((
             map(
-                tuple((local_name, range)),
+                tuple((field_name, range)),
                 |(id, range)| WirePart::ranged(id, range.0, range.1)
             ),
-            map(local_name,
+            map(field_name,
                 |id| WirePart::total(id),
             ),
             map(
@@ -160,7 +181,7 @@ fn comment(i: &str) -> IResult<&str, &str> {
     )(i)
 }
 
-pub fn ws(i: &str) -> IResult<&str, &str> {
+pub fn whitespace(i: &str) -> IResult<&str, &str> {
     terminated(
         take_while(|c: char| c.is_ascii_whitespace()),
         opt(comment),
@@ -168,9 +189,9 @@ pub fn ws(i: &str) -> IResult<&str, &str> {
 }
 
 #[test]
-fn ws_test() {
-    assert_eq!(ws("  \n\t ...\n"), Ok(("...\n", "  \n\t ")));
-    assert_eq!(ws(" word "), Ok(("word ", " ")));
+fn whitespace_test() {
+    assert_eq!(whitespace("  \n\t ...\n"), Ok(("...\n", "  \n\t ")));
+    assert_eq!(whitespace(" word "), Ok(("word ", " ")));
 }
 
 pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F, delimiter: &'a str) -> impl Fn(&'a str) -> IResult<&'a str, Vec<T>> {
@@ -178,7 +199,7 @@ pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F, delimiter
         tuple((
                 many0(
                     map(
-                        tuple((parser, ws, tag(delimiter), ws)),
+                        tuple((parser, whitespace, tag(delimiter), whitespace)),
                         |(parsed, _, _, _)| parsed
                     )
                 ),
@@ -190,9 +211,9 @@ pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F, delimiter
 
 #[test]
 fn list_test() {
-    assert_eq!(list(local_name, ",")("a, b, c"), Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect())));
-    assert_eq!(list(local_name, ",")(")"), Ok((")", vec![])));
-    assert_eq!(list(local_name, ",")("a, b), c"), Ok(("), c", vec![String::from("a"), String::from("b")])));
+    assert_eq!(list(field_name, ",")("a, b, c"), Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect())));
+    assert_eq!(list(field_name, ",")(")"), Ok((")", vec![])));
+    assert_eq!(list(field_name, ",")("a, b), c"), Ok(("), c", vec![String::from("a"), String::from("b")])));
 }
 
 fn wirebus(i: &str) -> IResult<&str, WireBus> {
@@ -221,7 +242,7 @@ fn wire(i: &str) -> IResult<&str, Wire> {
     alt((
             map(
                 tuple((
-                        local_name,
+                        field_name,
                         index,
                 )),
                 |(name, width)| Wire {
@@ -231,7 +252,7 @@ fn wire(i: &str) -> IResult<&str, Wire> {
                 }
             ),
             map(
-                local_name,
+                field_name,
                 |name| Wire { 
                     name, 
                     width: 1, 
@@ -250,7 +271,7 @@ fn local_wire(i: &str) -> IResult<&str, Vec<Wire>> {
     map(
         tuple((
                 tag("wire"),
-                ws,
+                whitespace,
                 list(wire, ","),
                 tag(";"),
         )),
@@ -260,16 +281,16 @@ fn local_wire(i: &str) -> IResult<&str, Vec<Wire>> {
 
 #[test]
 fn local_wire_test() {
-    assert_eq!(local_wire("wire rudolf; ..."), Ok((" ...", Wire {
+    assert_eq!(local_wire("wire rudolf; ..."), Ok((" ...", vec![Wire {
         name: "rudolf".to_string(),
         width: 1,
         kind: WireKind::Private,
-    })));
-    assert_eq!(local_wire("wire stefan[278];"), Ok(("", Wire {
+    }])));
+    assert_eq!(local_wire("wire stefan[278];"), Ok(("", vec![Wire {
         name: "stefan".to_string(),
         width: 278,
         kind: WireKind::Private,
-    })));
+    }])));
 }
 
 fn input_wire(i: &str) -> IResult<&str, Wire> {
@@ -284,16 +305,16 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
     alt((
             map(
                 tuple((
-                        local_name,
-                        ws,
+                        field_name,
+                        whitespace,
                         tag("="),
-                        ws,
+                        whitespace,
                         wirebus,
                 )),
                 |(name, _, _, _, bus)| Connection { local: bus, module: name }
             ),
             map(
-                local_name,
+                field_name,
                 |name| Connection { local: vec![WirePart::total(name.to_string())], module: name },
             )
     ))(i)
@@ -301,11 +322,11 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
 
 #[test]
 fn assignment_test() {
-    assert_eq!(assignment("a=b"), Ok(("", Connection::<String> {
+    assert_eq!(assignment("a=b"), Ok(("", Connection {
         module: "a".to_string(),
         local: vec![WirePart::total("b".to_string())]
     })));
-    assert_eq!(assignment("a = {c[2], d[1:4], f}"), Ok(("", Connection::<String> {
+    assert_eq!(assignment("a = {c[2], d[1:4], f}"), Ok(("", Connection {
         module: "a".to_string(),
         local: vec![
             WirePart::ranged("c".to_string(), 2, 2),
@@ -318,19 +339,19 @@ fn assignment_test() {
 fn instance(i: &str) -> IResult<&str, Instance> {
     map(
         tuple((
-                ws,
-                local_name,
-                ws,
-                local_name,
-                ws,
+                whitespace,
+                module_name,
+                whitespace,
+                field_name,
+                whitespace,
                 delimited(
                     tag("("),
                     list(assignment, ","),
                     tag(")"),
                 ),
-                ws,
+                whitespace,
                 tag("->"),
-                ws,
+                whitespace,
                 delimited(
                     tag("("),
                     list(assignment, ","),
@@ -351,16 +372,16 @@ fn instance_test() {
                     module: "nor".to_string(),
                     name: "inv".to_string(),
                     inputs: vec![
-                        Connection::<String> {
+                        Connection {
                             module: "a".to_string(),
                             local: vec![WirePart::total("in".to_string())]
                         },
-                        Connection::<String> {
+                        Connection {
                             module: "b".to_string(),
                             local: vec![WirePart::total("in".to_string())]
                         },
                     ],
-                    outputs: vec![Connection::<String> {
+                    outputs: vec![Connection {
                         module: "out".to_string(),
                         local: vec![WirePart::total("out".to_string())]
                     }],
@@ -368,60 +389,60 @@ fn instance_test() {
     )));
 }
 
-pub fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
+fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
     map(
         tuple((
-                ws,
+                whitespace,
                 tag("module"),
-                ws,
+                whitespace,
                 module_name,
-                ws,
+                whitespace,
                 delimited(
                     tag("("),
                     list(input_wire, ","),
                     tag(")"),
                 ),
-                ws,
+                whitespace,
                 tag("->"),
-                ws,
+                whitespace,
                 delimited(
                     tag("("),
                     list(output_wire, ","),
                     tag(")"),
                 ),
-                ws
+                whitespace
         )),
-        |(_, _, _, name, _, inputs, _, _, _, outputs, _)| (name, inputs, outputs),
-        )(i)
+        |(_, _, _, name, _, inputs, _, _, _, outputs, _)| (name, inputs, outputs)
+            )(i)
 }
 
-pub enum BodyOption {
+enum BodyPart {
     LocalWire(Vec<Wire>),
     Instance(Instance),
 }
 
-pub fn body_option (i: &str) -> IResult<&str, BodyOption> {
+fn body_part (i: &str) -> IResult<&str, BodyPart> {
     alt((
-            map(local_wire, |w| BodyOption::LocalWire(w)),
-            map(instance, |i| BodyOption::Instance(i)),
+            map(local_wire, |w| BodyPart::LocalWire(w)),
+            map(instance, |i| BodyPart::Instance(i)),
     ))(i)
 }
 
-pub fn module_body(i: &str) -> IResult<&str, Vec<BodyOption>> {
+fn module_body(i: &str) -> IResult<&str, Vec<BodyPart>> {
     delimited(
         tag("{"),
         delimited(
-            ws,
-            many0(delimited(ws, body_option, ws)),
-            ws,
+            whitespace,
+            many0(delimited(whitespace, body_part, whitespace)),
+            whitespace,
         ),
-        tuple((tag("}"), ws))
+        tuple((tag("}"), whitespace))
     )(i)
 }
 
-pub fn module(i: &str) -> IResult<&str, Module> {
+fn module(i: &str) -> IResult<&str, Module> {
     map(
-        tuple((module_header, ws, module_body)),
+        tuple((module_header, whitespace, module_body)),
         |((name, mut inputs, mut outputs), _,  body)| {
             let mut locals = Vec::new();
             let mut instances = Vec::new();
@@ -431,8 +452,8 @@ pub fn module(i: &str) -> IResult<&str, Module> {
 
             for line in body {
                 match line {
-                    BodyOption::LocalWire(mut w) => locals.append(&mut w),
-                    BodyOption::Instance(i) => instances.push(i),
+                    BodyPart::LocalWire(mut w) => locals.append(&mut w),
+                    BodyPart::Instance(i) => instances.push(i),
                 }
             }
 

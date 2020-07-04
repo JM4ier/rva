@@ -1,5 +1,3 @@
-use std::fmt;
-
 #[derive(Debug)]
 pub struct GraphModule {
     pub module_name: String,

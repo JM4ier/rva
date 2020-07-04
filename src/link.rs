@@ -7,7 +7,6 @@ use std::collections::*;
 #[derive(Debug)]
 pub enum ErrorKind {
     Recursion,
-    WireMismatch,
     MismatchedWireSize,
     DuplicateWireName,
     MissingIOWires,
@@ -20,47 +19,76 @@ pub enum ErrorKind {
 
 #[derive(Debug)]
 pub struct LinkError {
-    pub message: String, 
+    pub description: String, 
     pub kind: ErrorKind,
 }
 
 impl LinkError {
-    fn new(kind: ErrorKind, message: String) -> Self {
-        Self { message, kind }
+    fn new(kind: ErrorKind, description: String) -> Self {
+        Self { description, kind }
     }
 }
 
 pub type LinkResult<T> = Result<T, LinkError>;
 
 pub struct Linker<'a> {
+    /// module that is currently being linked
     module: &'a Module,
+    /// where the bits of the wire are located in the single 'wire list' in the net
     allocated_wires: &'a mut Vec<Vec<usize>>,
-    module_store: &'a HashMap<String, Module>,
-    drive_count: Vec<Vec<usize>>,
-    descent: &'a mut HashSet<String>,
+    /// all modules that are being linked, used for finding child modules
+    modules: &'a HashMap<String, Module>,
+    /// how many times a wire is being edited, on a bit per bit basis
+    wire_edits: Vec<Vec<usize>>,
+    /// parent modules
+    descent: &'a mut HashSet<String>, // TODO maybe replace by a simple vec?
+    /// circuit net as output
     net: &'a mut Net,
 }
 
 impl<'a> Linker<'a> {
-    pub fn new(module: &'a Module, allocated_wires: &'a mut Vec<Vec<usize>>, module_store: &'a HashMap<String, Module>, descent: &'a mut HashSet<String>, net: &'a mut Net) -> LinkResult<Self> {
-        let mut drive_count = Vec::with_capacity(module.locals.len());
-        for (idx, wire) in module.locals.iter().enumerate() {
-            drive_count.push(vec![0; wire.width]);
+    pub fn new(
+        module: &'a Module, 
+        allocated_wires: &'a mut Vec<Vec<usize>>, 
+        modules: &'a HashMap<String, Module>, 
+        descent: &'a mut HashSet<String>, 
+        net: &'a mut Net) 
+    -> LinkResult<Self> 
+    {
+        Self::check_duplicate_wires(module)?;
+
+        let mut wire_edits = Vec::with_capacity(module.locals.len());
+        for wire in module.locals.iter() {
+            // input wires are already edited by the parent module
+            let edits = (wire.kind == WireKind::Input) as usize;
+            wire_edits.push(vec![edits; wire.width]);
         }
 
         Ok(Self {
             module, 
             allocated_wires,
-            module_store,
-            drive_count,
+            modules,
+            wire_edits,
             descent,
             net
         })
     }
-}
 
-impl<'a> Linker<'a> {
-    fn alloc_wirebus(&mut self, bus: &'a WireBus, modify_count: bool) -> LinkResult<Vec<usize>> {
+    fn check_duplicate_wires(module: &Module) -> LinkResult<()> {
+        for (i, wire1) in module.locals.iter().enumerate() {
+            for (k, wire2) in module.locals.iter().enumerate() {
+                if wire1.name == wire2.name && i != k{
+                    return Err(LinkError::new(
+                            ErrorKind::DuplicateWireName,
+                            format!("Wire '{}' is being defined twice", wire1.name)
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn alloc_wirebus(&mut self, bus: &'a WireBus, edits_local_wires: bool) -> LinkResult<Vec<usize>> {
         let mut alloc_bus = Vec::new();
         for part in bus.iter() {
             match part {
@@ -73,11 +101,13 @@ impl<'a> Linker<'a> {
                         };
                         for i in range {
                             alloc_bus.push(self.allocated_wires[idx][i]);
-                            self.drive_count[idx][i] += modify_count as usize;
+                            self.wire_edits[idx][i] += edits_local_wires as usize;
                         }
                     } else {
-                        return Err(LinkError::new(ErrorKind::UnknownWire, format!(
-                                    "In module {}: No local wire with name {}", self.module.name, &name)));
+                        return Err(LinkError::new(
+                                ErrorKind::UnknownWire, 
+                                format!("In module '{}': No local wire with name '{}'.", self.module.name, &name)
+                        ));
                     }
 
                 },
@@ -103,37 +133,47 @@ impl<'a> Linker<'a> {
     }
 
     fn link_io(&mut self, module: &'a Module, instance: &'a Instance, io_type: WireKind, child_allocated_wires: &mut Vec<Vec<usize>>) 
-    -> Result<(), LinkError> {
+        -> Result<(), LinkError> {
 
-        let io = match io_type {
-            WireKind::Input => &instance.inputs,
-            _ => &instance.outputs,
-        };
-
-        for channel in io.iter() {
-            let child_wire_name = &channel.module;
-            let child_wire_idx = if let Some(idx) = module.locals.iter().position(|c| &c.name == child_wire_name) {
-                let child = &module.locals[idx];
-                if child.kind != io_type {
-                    return Err(LinkError::new(ErrorKind::IncorrectWireKind, format!("")));
-                }
-                idx
-            } else {
-                return Err(LinkError::new(ErrorKind::UnknownWire,format!(
-                            "In module {} in module instantiation {}: No I/O wire with name {}", self.module.name, &instance.name, &child_wire_name)));
+            let io = match io_type {
+                WireKind::Input => &instance.inputs,
+                _ => &instance.outputs,
             };
 
-            child_allocated_wires[child_wire_idx] = self.alloc_wirebus(&channel.local, io_type == WireKind::Output)?;
+            for io_wire in io.iter() {
+                let child_wire_name = &io_wire.module;
+                let child_wire_idx = if let Some(idx) = module.locals.iter().position(|c| &c.name == child_wire_name) {
+                    let child = &module.locals[idx];
+                    if child.kind != io_type {
+                        return Err(LinkError::new(
+                                ErrorKind::IncorrectWireKind, 
+                                format!(
+                                    "Module Instantiation '{}' in '{}': Wire '{}' is not of the correct type.",
+                                    instance.name, self.module.name, child_wire_name
+                                )
+                        ));
+                    }
+                    idx
+                } else {
+                    return Err(LinkError::new(
+                            ErrorKind::UnknownWire,
+                            format!(
+                                "In module '{}' in module instantiation '{}': No I/O wire with name '{}'", 
+                                self.module.name, &instance.name, &child_wire_name)
+                    ));
+                };
 
-            if child_allocated_wires[child_wire_idx].len() != module.locals[child_wire_idx].width {
-                return Err(LinkError::new(ErrorKind::MismatchedWireSize,
-                        format!("Wire {} of module {} has a wire size of {}, but passed a wire size of {}", 
-                            &child_wire_name,  &module.name, module.locals[child_wire_idx].width, child_allocated_wires[child_wire_idx].len())));
+                child_allocated_wires[child_wire_idx] = self.alloc_wirebus(&io_wire.local, io_type == WireKind::Output)?;
+
+                if child_allocated_wires[child_wire_idx].len() != module.locals[child_wire_idx].width {
+                    return Err(LinkError::new(ErrorKind::MismatchedWireSize,
+                            format!("Wire {} of module {} has a wire size of {}, but passed a wire size of {}", 
+                                &child_wire_name,  &module.name, module.locals[child_wire_idx].width, child_allocated_wires[child_wire_idx].len())));
+                }
             }
-        }
 
-        Ok(())
-    }
+            Ok(())
+        }
 
     pub fn link(&mut self) -> Result<GraphModule, LinkError> {
         if self.descent.contains(&self.module.name) {
@@ -182,7 +222,7 @@ impl<'a> Linker<'a> {
         let mut instances = Vec::new();
 
         for instance in self.module.instances.iter() {
-            if let Some(module) = self.module_store.get(&instance.module) {
+            if let Some(module) = self.modules.get(&instance.module) {
                 let mut child_allocated_wires = vec![Vec::new(); module.locals.len()];
                 self.link_io(module, instance, WireKind::Input, &mut child_allocated_wires)?;
                 self.link_io(module, instance, WireKind::Output, &mut child_allocated_wires)?;
@@ -201,7 +241,7 @@ impl<'a> Linker<'a> {
                 }
 
                 self.descent.insert(self.module.name.to_owned());
-                let mut module_linker = Linker::new(module, &mut child_allocated_wires, self.module_store, self.descent, self.net)?;
+                let mut module_linker = Linker::new(module, &mut child_allocated_wires, self.modules, self.descent, self.net)?;
                 let mut graph_instance = module_linker.link()?;
                 graph_instance.name = instance.name.to_owned();
                 instances.push(graph_instance);
@@ -219,7 +259,7 @@ impl<'a> Linker<'a> {
                 1
             };
 
-            for (bit_idx, bit) in self.drive_count[wire_idx].iter().enumerate() {
+            for (bit_idx, bit) in self.wire_edits[wire_idx].iter().enumerate() {
                 if *bit > expected_dc {
                     return Err(LinkError::new(ErrorKind::MultipleDrivers,format!(
                                 "Bit {} in wire {} in module {} is being driven {} times, expected {} times.",
