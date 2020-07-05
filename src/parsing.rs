@@ -402,9 +402,9 @@ fn instance(i: &str) -> IResult<&str, Instance> {
 
 #[test]
 fn instance_test() {
-    assert_eq!(instance("nor inv(a=in, b=in) -> (out=out);"), Ok(("", 
+    assert_eq!(instance("Nor inv(a=in, b=in) -> (out=out);"), Ok(("", 
                 Instance{
-                    module: "nor".to_string(),
+                    module: "Nor".to_string(),
                     name: "inv".to_string(),
                     inputs: vec![
                         Connection {
