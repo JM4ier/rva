@@ -51,6 +51,6 @@ module Reg16(clk, reset, d[16]) -> (q[16]) {
 
 module Reg32(clk, reset, d[32]) -> (q[32]) {
     Reg16 reg0(clk, reset, d=d[00:15]) -> (q=q[00:15]);
-    Reg16 reg1(clk, reset, d=d[16:32]) -> (q=q[16:32]);
+    Reg16 reg1(clk, reset, d=d[16:31]) -> (q=q[16:31]);
 }
 

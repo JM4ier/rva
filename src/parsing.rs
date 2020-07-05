@@ -69,8 +69,8 @@ fn hex_number_test() {
 
 pub fn wire_constant(i: &str) -> IResult<&str, Vec<bool>> {
     alt((
-            binary_number,
             hex_number,
+            binary_number,
     ))(i)
 }
 
