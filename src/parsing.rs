@@ -80,11 +80,7 @@ pub fn field_name(i: &str) -> IResult<&str, String> {
                 take_while1(|c: char| c.is_ascii_alphabetic()), 
                 take_while(|c: char| c.is_ascii_alphanumeric() || c == '_')
         )),
-        |(s1, s2): (&str, &str)| {
-            let mut owned = s1.to_string();
-            owned.push_str(s2);
-            owned
-        }
+        |(s1, s2): (&str, &str)| s1.to_owned() + s2
     )(i)
 }
 
@@ -92,13 +88,9 @@ pub fn module_name(i: &str) -> IResult<&str, String> {
     map(
         tuple((
                 take_while1(|c: char| c.is_ascii_alphabetic() && c.is_ascii_uppercase()), 
-                take_while(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                take_while(|c: char| c.is_ascii_alphanumeric())
         )),
-        |(s1, s2): (&str, &str)| {
-            let mut owned = s1.to_string();
-            owned.push_str(s2);
-            owned
-        }
+        |(s1, s2): (&str, &str)| s1.to_owned() + s2
     )(i)
 }
 
@@ -170,8 +162,20 @@ fn wirepart(i: &str) -> IResult<&str, WirePart> {
 
 #[test]
 fn wirepart_test() {
-    assert_eq!(wirepart("asdf "), Ok((" ", WirePart::total("asdf".to_string()))));
-    assert_eq!(wirepart("test[1:2] other stuff"), Ok((" other stuff", WirePart::ranged("test".to_string(), 1, 2))));
+    assert_eq!(
+        wirepart("asdf "), 
+        Ok((
+                " ", 
+                WirePart::total("asdf".to_string())
+        ))
+    );
+    assert_eq!(
+        wirepart("test[1:2] other stuff"), 
+        Ok((
+                " other stuff", 
+                WirePart::ranged("test".to_string(), 1, 2)
+        ))
+    );
 }
 
 fn comment(i: &str) -> IResult<&str, &str> {
@@ -194,7 +198,9 @@ fn whitespace_test() {
     assert_eq!(whitespace(" word "), Ok(("word ", " ")));
 }
 
-pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F, delimiter: &'a str) -> impl Fn(&'a str) -> IResult<&'a str, Vec<T>> {
+pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> 
+(parser: F, delimiter: &'a str) -> impl Fn(&'a str) -> IResult<&'a str, Vec<T>> 
+{
     map(
         tuple((
                 many0(
@@ -211,9 +217,18 @@ pub fn list<'a, T, F: Copy + Fn(&str) -> IResult<&str, T>> (parser: F, delimiter
 
 #[test]
 fn list_test() {
-    assert_eq!(list(field_name, ",")("a, b, c"), Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect())));
-    assert_eq!(list(field_name, ",")(")"), Ok((")", vec![])));
-    assert_eq!(list(field_name, ",")("a, b), c"), Ok(("), c", vec![String::from("a"), String::from("b")])));
+    assert_eq!(
+        list(field_name, ",")("a, b, c"), 
+        Ok(("", ["a", "b", "c"].iter().map(|s| s.to_string()).collect()))
+    );
+    assert_eq!(
+        list(field_name, ",")(")"), Ok((")", 
+            vec![]))
+    );
+    assert_eq!(
+        list(field_name, ",")("a, b), c"), 
+        Ok(("), c", vec![String::from("a"), String::from("b")]))
+    );
 }
 
 fn wirebus(i: &str) -> IResult<&str, WireBus> {
@@ -263,8 +278,22 @@ fn wire(i: &str) -> IResult<&str, Wire> {
 
 #[test]
 fn wire_test() {
-    assert_eq!(wire("peter[5]"), Ok(("", Wire { name: "peter".to_string(), width: 5, kind: WireKind::Private })));
-    assert_eq!(wire("hans "), Ok((" ", Wire { name: "hans".to_string(), width: 1, kind: WireKind::Private })));
+    assert_eq!(
+        wire("peter[5]"), 
+        Ok(("", Wire { 
+            name: "peter".to_string(), 
+            width: 5, 
+            kind: WireKind::Private 
+        }))
+    );
+    assert_eq!(
+        wire("hans "), 
+        Ok((" ", Wire { 
+            name: "hans".to_string(), 
+            width: 1, 
+            kind: WireKind::Private 
+        }))
+    );
 }
 
 fn local_wire(i: &str) -> IResult<&str, Vec<Wire>> {
@@ -311,11 +340,17 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
                         whitespace,
                         wirebus,
                 )),
-                |(name, _, _, _, bus)| Connection { local: bus, module: name }
+                |(name, _, _, _, bus)| Connection { 
+                    local: bus, 
+                    module: name 
+                }
             ),
             map(
                 field_name,
-                |name| Connection { local: vec![WirePart::total(name.to_string())], module: name },
+                |name| Connection { 
+                    local: vec![WirePart::total(name.to_string())], 
+                    module: name
+                },
             )
     ))(i)
 }

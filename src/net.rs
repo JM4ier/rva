@@ -79,9 +79,27 @@ impl Simulation {
     }
 
     #[inline]
-    pub fn update(&mut self) {
-        if let Some(gate) = self.process_queue.pop_front() {
+    fn enqueue_dependencies(&mut self, wire: usize) {
+        for &gate in self.dependencies[wire].iter() {
+            if !self.dirty[gate] {
+                self.dirty[gate] = true;
+                self.process_queue.push_back(gate);
+            }
+        }
+    }
+
+    #[inline]
+    fn dequeue(&mut self) -> Option<usize> {
+        let front = self.process_queue.pop_front();
+        if let Some(gate) = front {
             self.dirty[gate] = false;
+        }
+        front
+    }
+
+    #[inline]
+    pub fn update(&mut self) {
+        if let Some(gate) = self.dequeue() {
             let gate =  &self.net.gates[gate];
 
             let in1 = self.net.wires[gate.in1];
@@ -92,13 +110,8 @@ impl Simulation {
 
             if orig != out {
                 self.net.wires[gate.out] = out;
-
-                for &d in self.dependencies[gate.out].iter() {
-                    if !self.dirty[d] {
-                        self.dirty[d] = true;
-                        self.process_queue.push_back(d);
-                    }
-                }
+                let wire = gate.out;
+                self.enqueue_dependencies(wire);
             }
         }
     }
@@ -108,37 +121,20 @@ impl Simulation {
         self.process_queue.is_empty()
     }
 
+    #[inline]
     pub fn set_value(&mut self, addr: usize, value: bool) {
         self.net.wires[addr] = value;
-        for &d in self.dependencies[addr].iter() {
-            if !self.dirty[d] {
-                self.dirty[d] = true;
-                self.process_queue.push_back(d);
-            }
-        }
-    }
-}
-
-struct BinaryDisplayer<'a> {
-    net: &'a Net,
-}
-
-impl crate::netgraph::WireDisplayer for BinaryDisplayer<'_> {
-    fn display_wire(&self, wire: &[usize]) -> String {
-        let mut string = String::from("0b");
-        for &i in wire.iter().rev() {
-            string.push_str(&format!("{}", self.net.wires[i] as u8));
-        }
-        string
+        self.enqueue_dependencies(addr);
     }
 }
 
 impl crate::netgraph::WireDisplayer for Simulation {
     fn display_wire(&self, wire: &[usize]) -> String {
-        let displayer = BinaryDisplayer {
-            net: &self.net
-        };
-        displayer.display_wire(wire)
+        let mut string = String::from("0b");
+        for &i in wire.iter().rev() {
+            string += &format!("{}", self.net.wires[i] as u8);
+        }
+        string
     }
 }
 

@@ -49,7 +49,7 @@ fn parse(source: &String) -> Vec<Module> {
     mods
 }
 
-fn build(mods: Vec<Module>) -> (GraphModule, Simulation) {
+fn build(mods: Vec<Module>) -> LinkResult<(GraphModule, Simulation)> {
     let mut mod_map = HashMap::new();
     for m in mods.into_iter() {
         let name = m.name.to_owned();
@@ -59,16 +59,16 @@ fn build(mods: Vec<Module>) -> (GraphModule, Simulation) {
     }
 
     let mut net = Net::new();
-    let mut descent = HashSet::new();
+    let mut descent = Vec::new();
     let mut wires = vec![vec![]; 3];
     let top = mod_map.get("Top").expect("No 'Top' Module found");
 
-    let mut linker = Linker::new(top, &mut wires, &mod_map, &mut descent, &mut net).unwrap();
-    let graph = linker.link().unwrap();
+    let mut linker = Linker::new(top, &mut wires, &mod_map, &mut descent, &mut net)?;
+    let graph = linker.link()?;
 
     let sim = Simulation::new(net);
 
-    (graph, sim)
+    Ok((graph, sim))
 }
 
 fn start_interactive(graph: &GraphModule, sim: &mut Simulation) {
@@ -83,7 +83,9 @@ fn start_interactive(graph: &GraphModule, sim: &mut Simulation) {
 fn main() {
     let source = read_source();
     let mods = parse(&source);
-    let (graph, mut simulation) = build(mods);
-    start_interactive(&graph, &mut simulation);
+    match build(mods) {
+        Ok((graph, mut simulation)) => start_interactive(&graph, &mut simulation),
+        Err(e) => eprintln!("Failed to link modules ({:?}): {}", e.kind, e.description),
+    }
 }
 

@@ -19,13 +19,13 @@ pub enum ErrorKind {
 
 #[derive(Debug)]
 pub struct LinkError {
-    pub description: String, 
     pub kind: ErrorKind,
+    pub description: String, 
 }
 
 impl LinkError {
-    fn new(kind: ErrorKind, description: String) -> Self {
-        Self { description, kind }
+    fn new<T>(kind: ErrorKind, description: String) -> LinkResult<T> {
+        Err(Self { description, kind })
     }
 }
 
@@ -41,7 +41,7 @@ pub struct Linker<'a> {
     /// how many times a wire is being edited, on a bit per bit basis
     wire_edits: Vec<Vec<usize>>,
     /// parent modules
-    descent: &'a mut HashSet<String>, // TODO maybe replace by a simple vec?
+    descent: &'a mut Vec<String>,
     /// circuit net as output
     net: &'a mut Net,
 }
@@ -51,9 +51,9 @@ impl<'a> Linker<'a> {
         module: &'a Module, 
         allocated_wires: &'a mut Vec<Vec<usize>>, 
         modules: &'a HashMap<String, Module>, 
-        descent: &'a mut HashSet<String>, 
+        descent: &'a mut Vec<String>, 
         net: &'a mut Net) 
-    -> LinkResult<Self> 
+        -> LinkResult<Self> 
     {
         Self::check_duplicate_wires(module)?;
 
@@ -78,36 +78,42 @@ impl<'a> Linker<'a> {
         for (i, wire1) in module.locals.iter().enumerate() {
             for (k, wire2) in module.locals.iter().enumerate() {
                 if wire1.name == wire2.name && i != k{
-                    return Err(LinkError::new(
-                            ErrorKind::DuplicateWireName,
-                            format!("Wire '{}' is being defined twice", wire1.name)
-                    ));
+                    return LinkError::new(
+                        ErrorKind::DuplicateWireName,
+                        format!(
+                            "Wire '{}' is being defined multiple times.", 
+                            wire1.name
+                        )
+                    );
                 }
             }
         }
         Ok(())
     }
 
-    fn alloc_wirebus(&mut self, bus: &'a WireBus, edits_local_wires: bool) -> LinkResult<Vec<usize>> {
+    fn alloc_wirebus(&mut self, bus: &'a WireBus, io_type: WireKind) -> LinkResult<Vec<usize>> {
         let mut alloc_bus = Vec::new();
         for part in bus.iter() {
             match part {
                 WirePart::Local{name, range} => {
                     if let Some((idx, wire)) = self.find_wire(&name) {
                         let range = if let WireRange::Ranged{from, to} = range {
-                            *from..(to+1)
+                            *from..(*to+1)
                         } else {
                             0..wire.width
                         };
                         for i in range {
                             alloc_bus.push(self.allocated_wires[idx][i]);
-                            self.wire_edits[idx][i] += edits_local_wires as usize;
+                            self.wire_edits[idx][i] += (io_type == WireKind::Output) as usize;
                         }
                     } else {
-                        return Err(LinkError::new(
-                                ErrorKind::UnknownWire, 
-                                format!("In module '{}': No local wire with name '{}'.", self.module.name, &name)
-                        ));
+                        return LinkError::new(
+                            ErrorKind::UnknownWire, 
+                            format!(
+                                "In module '{}': No local wire with name '{}'.", 
+                                self.module.name, &name
+                            )
+                        );
                     }
 
                 },
@@ -132,58 +138,100 @@ impl<'a> Linker<'a> {
         None
     }
 
-    fn link_io(&mut self, module: &'a Module, instance: &'a Instance, io_type: WireKind, child_allocated_wires: &mut Vec<Vec<usize>>) 
-        -> Result<(), LinkError> {
+    fn link_instance_io(
+        &mut self, module: &'a Module, 
+        instance: &'a Instance, 
+        allocated_wires: &mut Vec<Vec<usize>>, 
+        io_type: WireKind)
+        -> LinkResult<()> 
+    {
+        let io = match io_type {
+            WireKind::Input => &instance.inputs,
+            _ => &instance.outputs,
+        };
 
-            let io = match io_type {
-                WireKind::Input => &instance.inputs,
-                _ => &instance.outputs,
-            };
-
-            for io_wire in io.iter() {
-                let child_wire_name = &io_wire.module;
-                let child_wire_idx = if let Some(idx) = module.locals.iter().position(|c| &c.name == child_wire_name) {
-                    let child = &module.locals[idx];
-                    if child.kind != io_type {
-                        return Err(LinkError::new(
-                                ErrorKind::IncorrectWireKind, 
-                                format!(
-                                    "Module Instantiation '{}' in '{}': Wire '{}' is not of the correct type.",
-                                    instance.name, self.module.name, child_wire_name
-                                )
-                        ));
-                    }
-                    idx
-                } else {
-                    return Err(LinkError::new(
-                            ErrorKind::UnknownWire,
-                            format!(
-                                "In module '{}' in module instantiation '{}': No I/O wire with name '{}'", 
-                                self.module.name, &instance.name, &child_wire_name)
-                    ));
+        for io_wire in io.iter() {
+            let wire_name = &io_wire.module;
+            let wire_idx = 
+                match module.locals.iter().position(|c| c.name == *wire_name) {
+                    Some(idx) => idx,
+                    None => return LinkError::new(
+                        ErrorKind::UnknownWire,
+                        format!(
+                            "In module '{}' in module instantiation '{}': No I/O wire with name '{}'.", 
+                            self.module.name, &instance.name, &wire_name
+                        )
+                    ),
                 };
+            let child_wire = &module.locals[wire_idx];
 
-                child_allocated_wires[child_wire_idx] = self.alloc_wirebus(&io_wire.local, io_type == WireKind::Output)?;
-
-                if child_allocated_wires[child_wire_idx].len() != module.locals[child_wire_idx].width {
-                    return Err(LinkError::new(ErrorKind::MismatchedWireSize,
-                            format!("Wire {} of module {} has a wire size of {}, but passed a wire size of {}", 
-                                &child_wire_name,  &module.name, module.locals[child_wire_idx].width, child_allocated_wires[child_wire_idx].len())));
-                }
+            if child_wire.kind != io_type {
+                return LinkError::new(
+                    ErrorKind::IncorrectWireKind, 
+                    format!(
+                        "Module Instantiation '{}' in '{}': Wire '{}' is not of the correct type.",
+                        instance.name, self.module.name, wire_name
+                    )
+                );
             }
 
-            Ok(())
+            allocated_wires[wire_idx] = self.alloc_wirebus(&io_wire.local, io_type)?;
+
+            if allocated_wires[wire_idx].len() != module.locals[wire_idx].width {
+                return LinkError::new(
+                    ErrorKind::MismatchedWireSize,
+                    format!(
+                        "Wire '{}' of module '{}' has a wire size of '{}', but passed a wire size of {}.", 
+                        &wire_name,  &module.name, module.locals[wire_idx].width, allocated_wires[wire_idx].len()
+                    )
+                );
+            }
         }
 
-    pub fn link(&mut self) -> Result<GraphModule, LinkError> {
+        Ok(())
+    }
+
+    pub fn link(&mut self) -> LinkResult<GraphModule> {
         if self.descent.contains(&self.module.name) {
-            return Err(LinkError::new(ErrorKind::Recursion, format!("Module {} has a recursive definition", self.module.name)));
+            return LinkError::new(
+                ErrorKind::Recursion, 
+                format!(
+                    "Module '{}' has a recursive definition.", 
+                    self.module.name
+                )
+            );
+        }
+
+        // base case, everything gets broken down to nor gates
+        if self.module.name == "Nor" {
+            let a = self.allocated_wires[0][0];
+            let b = self.allocated_wires[1][0];
+            let out = self.allocated_wires[2][0];
+            self.net.create_nor(a, b, out);
+
+            let graph_wire = |name, idx| GraphWire {
+                name: String::from(name),
+                values: vec![idx],
+            };
+
+            return Ok(
+                GraphModule {
+                    module_name: self.module.name.clone(),
+                    name: String::from("<nor>"),
+                    instances: Vec::new(),
+                    locals: vec![
+                        graph_wire("a", a),
+                        graph_wire("b", b),
+                        graph_wire("out", out),
+                    ],
+                }
+            );
         }
 
         for (idx, wire) in self.module.locals.iter().enumerate() {
             if wire.kind == WireKind::Private {
-                // allocate space only for private wires, I/O is already allocated by the
-                // parent module
+                // allocate space only for private wires, 
+                // I/O is already allocated by the parent module
 
                 let begin = self.net.allocate_wire(wire.width);
                 self.allocated_wires[idx] = (begin..begin+wire.width).collect();
@@ -192,103 +240,97 @@ impl<'a> Linker<'a> {
             }
         }
 
-        if self.module.name == "Nor" {
-            let a = self.allocated_wires[0][0];
-            let b = self.allocated_wires[1][0];
-            let out = self.allocated_wires[2][0];
-            self.net.create_nor(a, b, out);
-
-            return Ok(GraphModule {
-                module_name: self.module.name.to_owned(),
-                name: String::from("<nor>"),
-                instances: Vec::new(),
-                locals: vec![
-                    GraphWire {
-                        name: String::from("a"),
-                        values: vec![a],
-                    },
-                    GraphWire {
-                        name: String::from("b"),
-                        values: vec![b],
-                    },
-                    GraphWire {
-                        name: String::from("out"),
-                        values: vec![out],
-                    },
-                ],
-            });
-        }
-
-        let mut instances = Vec::new();
+        let mut graph_instances = Vec::new();
 
         for instance in self.module.instances.iter() {
-            if let Some(module) = self.modules.get(&instance.module) {
-                let mut child_allocated_wires = vec![Vec::new(); module.locals.len()];
-                self.link_io(module, instance, WireKind::Input, &mut child_allocated_wires)?;
-                self.link_io(module, instance, WireKind::Output, &mut child_allocated_wires)?;
+            let module = match self.modules.get(&instance.module) {
+                Some(m) => m,
+                None => return LinkError::new(
+                    ErrorKind::UnknownModule,
+                    format!(
+                        "In module '{}': No module with name '{}'.",
+                        self.module.name, &instance.module
+                    )
+                ),
+            };
 
-                // check if all I/O has been assigned
-                for (i, wire) in module.locals.iter().enumerate() {
-                    if wire.kind == WireKind::Private {
-                        assert_eq!(child_allocated_wires[i].len(), 0);
-                    } else {
-                        if child_allocated_wires[i].len() == 0 {
-                            return Err(LinkError::new(ErrorKind::MissingIOWires, 
-                                    format!("Wire {} in Instance {} in Module {} has not been assigned", wire.name, instance.name, self.module.name)));
-                        } 
-                        assert_eq!(child_allocated_wires[i].len(), wire.width);
-                    }
+            let mut allocated_wires = vec![Vec::new(); module.locals.len()];
+
+            use WireKind::*;
+            self.link_instance_io(module, instance, &mut allocated_wires, Input)?;
+            self.link_instance_io(module, instance, &mut allocated_wires, Output)?;
+
+            // check if all I/O has been assigned
+            for (i, wire) in module.locals.iter().enumerate() {
+                if wire.kind == WireKind::Private {
+                    assert_eq!(allocated_wires[i].len(), 0);
+                } else {
+                    if allocated_wires[i].len() == 0 {
+                        return LinkError::new(
+                            ErrorKind::MissingIOWires, 
+                            format!(
+                                "Wire '{}' in Instance '{}' in Module '{}' has not been assigned.", 
+                                wire.name, instance.name, self.module.name
+                            )
+                        );
+                    } 
+                    assert_eq!(allocated_wires[i].len(), wire.width);
                 }
+            }
 
-                self.descent.insert(self.module.name.to_owned());
-                let mut module_linker = Linker::new(module, &mut child_allocated_wires, self.modules, self.descent, self.net)?;
+            self.descent.push(self.module.name.clone());
+            {
+                let mut module_linker = Linker::new(
+                    module, &mut allocated_wires, self.modules, self.descent, self.net
+                )?;
+
                 let mut graph_instance = module_linker.link()?;
                 graph_instance.name = instance.name.to_owned();
-                instances.push(graph_instance);
-                self.descent.remove(&self.module.name);
-            } else {
-                return Err(LinkError::new(ErrorKind::UnknownModule,format!(
-                            "In module {}: No module with name {}", self.module.name, &instance.module)));
+                graph_instances.push(graph_instance);
             }
+            self.descent.pop();
         }
 
         for (wire_idx, wire) in self.module.locals.iter().enumerate() {
-            let expected_dc: usize = if wire.kind == WireKind::Input {
-                0
-            } else {
-                1
-            };
-
-            for (bit_idx, bit) in self.wire_edits[wire_idx].iter().enumerate() {
-                if *bit > expected_dc {
-                    return Err(LinkError::new(ErrorKind::MultipleDrivers,format!(
-                                "Bit {} in wire {} in module {} is being driven {} times, expected {} times.",
-                                bit_idx, &wire.name, self.module.name, bit, expected_dc
-                    )));
-                } else if *bit < expected_dc {
-                    return Err(LinkError::new(ErrorKind::NoDriver,format!(
-                                "Bit {} in wire {} in module {} is not being driven.",
-                                bit_idx, &wire.name, self.module.name
-                    )));
+            for (bit_idx, &bit) in self.wire_edits[wire_idx].iter().enumerate() {
+                if bit > 1 {
+                    return LinkError::new(
+                        ErrorKind::MultipleDrivers,
+                        format!(
+                            "wire '{}[{}]' in module '{}' is being driven {} times, expected {} times.",
+                            &wire.name, bit_idx, self.module.name, bit, 1
+                        )
+                    );
+                } else if bit < 1 {
+                    return LinkError::new(
+                        ErrorKind::NoDriver,
+                        format!(
+                            "wire '{}[{}]' in module '{}' is not being driven.",
+                            &wire.name, bit_idx, self.module.name
+                        )
+                    );
                 }
             }
         }
-        Ok(GraphModule{
-            module_name: self.module.name.to_owned(),
-            name: String::from("<root>"),
-            instances,
-            locals: {
-                let mut locals = Vec::new();
-                for (idx, wire) in self.module.locals.iter().enumerate() {
-                    let values = self.allocated_wires[idx].clone();
-                    locals.push(GraphWire {
-                        name: wire.name.to_owned(),
-                        values,
-                    });
-                }
-                locals
-            },
-        })
+
+        Ok(
+            GraphModule{
+                module_name: self.module.name.clone(),
+                name: String::from("<root>"),
+                instances: graph_instances,
+                locals: 
+                    self.module.locals
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, wire)| 
+                        GraphWire {
+                            name: wire.name.clone(),
+                            values: self.allocated_wires[idx].clone(),
+                        }
+                    )
+                    .collect()
+            }
+        )
     }
 }
 
