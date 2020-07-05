@@ -63,7 +63,7 @@ pub type WireBus = Vec<WirePart>;
 
 impl WirePart {
     pub fn total(name: String) -> Self {
-        Self::Local {
+        WirePart::Local {
             name,
             range: WireRange::Total,
         }

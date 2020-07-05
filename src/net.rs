@@ -131,5 +131,9 @@ impl Simulation {
     pub fn get_value(&self, addr: usize) -> bool {
         self.net.wires[addr]
     }
+
+    pub fn print_stats(&self) {
+        println!("Wires: {}, Nor gates: {}", self.net.wires.len(), self.net.gates.len());
+    }
 }
 

@@ -78,16 +78,23 @@ pub struct GraphAndSimulation {
 }
 
 #[no_mangle]
-fn create_graph_simulation() -> *mut GraphAndSimulation {
+pub extern "C" fn create_graph_simulation() -> GraphAndSimulation {
     let source = read_source();
     let mods = parse(&source);
 
     match build(mods) {
         Ok((graph, sim)) => {
-            Box::into_raw(Box::new(GraphAndSimulation {
-                graph: Box::into_raw(Box::new(graph)),
-                sim:   Box::into_raw(Box::new(sim)),
-            }))
+            let graph = Box::into_raw(Box::new(graph));
+            let sim   = Box::into_raw(Box::new(sim));
+
+            let ptr = GraphAndSimulation {
+                graph, sim
+            };
+
+            std::mem::forget(graph);
+            std::mem::forget(sim);
+
+            ptr
         },
         Err(e) => {
             eprintln!("Failed to link modules ({:?}): {}", e.kind, e.description);
