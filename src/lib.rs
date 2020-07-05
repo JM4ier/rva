@@ -10,7 +10,7 @@ use parsing::*;
 use net::*;
 use netgraph::*;
 use link::*;
-use interact::*;
+pub use interact::*;
 
 use std::collections::*;
 use std::fs::File;
@@ -71,21 +71,28 @@ fn build(mods: Vec<Module>) -> LinkResult<(GraphModule, Simulation)> {
     Ok((graph, sim))
 }
 
-fn start_interactive(graph: &GraphModule, sim: &mut Simulation) {
-    println!("Starting interactive mode:");
-    let interactive_result = run_interactive(&graph, sim);
-    match interactive_result {
-        Err(e) => eprintln!("Error while running interactive: {:?}", e),
-        Ok(_) => println!("Goodbye!"),
-    }
+#[repr(C)]
+pub struct GraphAndSimulation {
+    graph: *mut GraphModule,
+    sim: *mut Simulation,
 }
 
-fn main() {
+#[no_mangle]
+fn create_graph_simulation() -> *mut GraphAndSimulation {
     let source = read_source();
     let mods = parse(&source);
+
     match build(mods) {
-        Ok((graph, mut simulation)) => start_interactive(&graph, &mut simulation),
-        Err(e) => eprintln!("Failed to link modules ({:?}): {}", e.kind, e.description),
+        Ok((graph, sim)) => {
+            Box::into_raw(Box::new(GraphAndSimulation {
+                graph: Box::into_raw(Box::new(graph)),
+                sim:   Box::into_raw(Box::new(sim)),
+            }))
+        },
+        Err(e) => {
+            eprintln!("Failed to link modules ({:?}): {}", e.kind, e.description);
+            std::process::exit(1);
+        },
     }
 }
 

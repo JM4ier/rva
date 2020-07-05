@@ -126,15 +126,10 @@ impl Simulation {
         self.net.wires[addr] = value;
         self.enqueue_dependencies(addr);
     }
-}
 
-impl crate::netgraph::WireDisplayer for Simulation {
-    fn display_wire(&self, wire: &[usize]) -> String {
-        let mut string = String::from("0b");
-        for &i in wire.iter().rev() {
-            string += &format!("{}", self.net.wires[i] as u8);
-        }
-        string
+    #[inline]
+    pub fn get_value(&self, addr: usize) -> bool {
+        self.net.wires[addr]
     }
 }
 

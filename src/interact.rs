@@ -1,110 +1,82 @@
-use nom::{
-    *,
-    bytes::complete::*,
-    combinator::*,
-    sequence::*,
-    branch::*,
-};
+use std::ffi::CString;
 
-use std::io::{self, prelude::*};
+use nom::*;
 
 use crate::net::*;
 use crate::netgraph::*;
 use crate::parsing::*;
 
-enum Command {
-    Print(Vec<String>),
-    Edit(Vec<String>, Vec<bool>),
-    Simulate(Option<usize>),
-    Terminate,
-}
-
 fn path(i: &str) -> IResult<&str, Vec<String>> {
     list(field_name, ".")(i)
 }
 
-fn command(i: &str) -> IResult<&str, Command>  {
-    alt((
-            map(
-                preceded(
-                    tuple((tag("print"), whitespace)),
-                    path
-                ),
-                |path| Command::Print(path)
-            ),
-            map(
-                tuple((
-                        alt((tag("assign"), tag("set"))), 
-                        whitespace, 
-                        path, 
-                        whitespace, 
-                        tag("="), 
-                        whitespace, 
-                        wire_constant
-                )),
-                |(_, _, path, _, _, _, constant)| Command::Edit(path, constant)
-            ),
-            map(
-                alt((tag("terminate"), tag("stop"), tag("quit"), tag("exit"))),
-                |_| Command::Terminate,
-            ),
-            map(
-                tuple((tag("run"), whitespace, opt(number))),
-                |(_, _, repetitions)| Command::Simulate(repetitions)
-            ),
-    ))(i)
-}
+#[no_mangle]
+pub unsafe extern "C" fn simulate(sim: *mut Simulation, mut count: u32) -> bool {
+    let sim = sim.as_mut().unwrap(); // if the caller gives us an invalid pointer, it's their fault
+    let bounded = count > 0;
 
-pub fn run_interactive(netgraph: &GraphModule, sim: &mut Simulation) -> io::Result<()> {
-    let mut input = String::new();
-    let stdin = io::stdin();
-
-    loop {
-        print!("> ");
-        io::stdout().flush()?;
-
-        input.clear();
-        stdin.read_line(&mut input)?;
-        let cmd = command(&input);
-
-        if let Ok((_, cmd)) = cmd {
-            match cmd {
-                Command::Terminate => break,
-                Command::Print(path) => {
-                    let display = &netgraph.display_path(&path, sim);
-                    match display {
-                        Ok(s) => println!("{}", s),
-                        Err(e) => eprintln!("Error: {:?}", e),
-                    }
-                },
-                Command::Edit(path, values) => {
-                    let addr = &netgraph.wire_addr(&path);
-                    match addr {
-                        Ok(addr) => {
-                            for (&addr, &val) in addr.iter().zip(values.iter()) {
-                                sim.set_value(addr, val);
-                            }
-                            if values.len() < addr.len() {
-                                eprintln!("Warning, passed value has {} bits, but wire needs {} bits.", values.len(), addr.len());
-                            }
-                        },
-                        Err(e) => eprintln!("Error: {:?}", e),
-                    }
-                },
-                Command::Simulate(mut count) => {
-                    while !sim.is_stable() {
-                        sim.update();
-                        if let Some(0) = count {
-                            break;
-                        }
-                        count = count.map(|c| c-1);
-                    }
-                },
+    while !sim.is_stable() {
+        sim.update();
+        if bounded {
+            count -= 1;
+            if count == 0 {
+                break;
             }
-        } else {
-            println!("Error parsing input");
         }
     }
-    Ok(())
+
+    sim.is_stable()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn get_value(sim: *const Simulation, graph: *const GraphModule, location: CString) -> *const bool {
+    let sim = sim.as_ref().unwrap();
+    let graph = graph.as_ref().unwrap();
+
+    let path = match path(&location.into_string().unwrap()) {
+        Ok((_, path)) => path,
+        Err(e) => {
+            eprintln!("Error parsing path: {:?}", e);
+            return vec![].as_ptr();
+        },
+    };
+
+    match graph.wire_addr(&path) {
+        Ok(addr) => {
+            addr.iter().map(|&a| sim.get_value(a)).collect::<Vec<bool>>().as_ptr()
+        },
+        Err(e) => {
+            eprintln!("Error: {:?}", e);
+            vec![].as_ptr()
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn set_value(sim: *mut Simulation, graph: *const GraphModule, location: CString, values: *const bool, values_len: usize) {
+    let sim = sim.as_mut().unwrap();
+    let graph = graph.as_ref().unwrap();
+    let values = std::slice::from_raw_parts(values, values_len);
+
+    let path = match path(&location.into_string().unwrap()) {
+        Ok((_, path)) => path,
+        Err(e) => {
+            eprintln!("Error parsing path: {:?}", e);
+            return;
+        },
+    };
+
+    let addr = &graph.wire_addr(&path);
+    match addr {
+        Ok(addr) => {
+            for (&addr, &val) in addr.iter().zip(values.iter()) {
+                sim.set_value(addr, val);
+            }
+            if values.len() < addr.len() {
+                eprintln!("Warning, passed value has {} bits, but wire needs {} bits.", values.len(), addr.len());
+            }
+        },
+        Err(e) => eprintln!("Error: {:?}", e),
+    }
 }
 
