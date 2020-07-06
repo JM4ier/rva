@@ -6,7 +6,9 @@ use crate::net::*;
 use crate::netgraph::*;
 use crate::parsing::*;
 
-fn path(i: &str) -> IResult<&str, Vec<String>> {
+unsafe fn path<'a>(ptr: *const u8, len: u64) -> IResult<&'a str, Vec<String>> {
+    let slice = std::slice::from_raw_parts(ptr, len as _);
+    let i = std::str::from_utf8(slice).unwrap();
     list(field_name, ".")(i)
 }
 
@@ -35,10 +37,7 @@ pub unsafe extern "C" fn get_value(
     buffer: *mut *mut bool) 
 -> usize 
 {
-    let location = std::slice::from_raw_parts(path_ptr, path_len as _);
-    let location = std::str::from_utf8(location).unwrap();
-
-    let path = match path(&location) {
+    let path = match path(path_ptr, path_len) {
         Ok((_, path)) => path,
         Err(e) => {
             eprintln!("Error parsing path: {:?}", e);
@@ -69,10 +68,8 @@ pub unsafe extern "C" fn set_value(
     values: *const bool, values_len: u64) 
 {
     let values = std::slice::from_raw_parts(values, values_len as _);
-    let location = std::slice::from_raw_parts(path_ptr, path_len as _);
-    let location = std::str::from_utf8(location).unwrap();
 
-    let path = match path(location) {
+    let path = match path(path_ptr, path_len) {
         Ok((_, path)) => path,
         Err(e) => {
             eprintln!("Error parsing path: {:?}", e);
@@ -98,5 +95,39 @@ pub unsafe extern "C" fn set_value(
 pub unsafe extern "C" fn drop_buffer(vec: *mut bool, len: usize) {
     let vec = Vec::from_raw_parts(vec, len, len);
     std::mem::drop(vec);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn get_description(
+    sim: &Simulation, 
+    graph: &GraphModule, 
+    path_ptr: *const u8, path_len: u64)
+-> CString 
+{
+    let result = (|| {
+        let location = match path(path_ptr, path_len) {
+            Ok((_, path)) => path,
+            Err(e) => return format!("Error: {:?}", e),
+        };
+
+        match graph.display_path(String::new(), &location, sim) {
+            Ok(s) => s,
+            Err(e) => format!("Error: {:?}", e),
+        }
+    })();
+
+    CString::new(result).unwrap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn get_width(graph: &GraphModule, path_ptr: *const u8, path_len: u64) -> u64 {
+    let path = match path(path_ptr, path_len) {
+        Ok((_, path)) => path,
+        Err(e) => {
+            format!("Error: {:?}", e);
+            return 0;
+        },
+    };
+    graph.wire_width(&path).unwrap_or(0)
 }
 
