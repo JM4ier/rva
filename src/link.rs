@@ -98,6 +98,15 @@ impl<'a> Linker<'a> {
                 WirePart::Local{name, range} => {
                     if let Some((idx, wire)) = self.find_wire(&name) {
                         let range = if let WireRange::Ranged{from, to} = range {
+                            if from > to || *to >= wire.width {
+                                return LinkError::new(
+                                    ErrorKind::MismatchedWireSize,
+                                    format!(
+                                        "[{}:{}] is not a valid subset of Wire '{}[{}]' in Module '{}'.",
+                                        from, to, wire.name, wire.width, self.module.name
+                                    )
+                                );
+                            }
                             *from..(*to+1)
                         } else {
                             0..wire.width

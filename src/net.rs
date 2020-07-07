@@ -126,6 +126,15 @@ impl Simulation {
         self.net.wires[addr] = value;
         self.enqueue_dependencies(addr);
     }
+
+    #[inline]
+    pub fn get_value(&self, addr: usize) -> bool {
+        self.net.wires[addr]
+    }
+
+    pub fn print_stats(&self) {
+        println!("Wires: {}, Nor gates: {}", self.net.wires.len(), self.net.gates.len());
+    }
 }
 
 impl crate::netgraph::WireDisplayer for Simulation {

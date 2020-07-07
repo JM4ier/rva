@@ -44,16 +44,20 @@ impl GraphModule {
         lines
     }
 
-    pub fn display<WD: WireDisplayer>(&self, wd: &WD) -> String {
-        format!("{}::{}\n  Wires:\n{}  Instances:\n{}\n", self.module_name, self.name, self.display_locals(wd), self.display_instances())
+    pub fn display<WD: WireDisplayer>(&self, name: String, wd: &WD) -> String {
+        format!("{}::{}\n  Wires:\n{}  Instances:\n{}\n", self.module_name, name, self.display_locals(wd), self.display_instances())
     }
 
-    pub fn display_path<WD: WireDisplayer>(&self, path: &[String], wd: &WD) -> Result<String, Error> {
+    pub fn display_path<WD: WireDisplayer>(&self, mut head: String, path: &[String], wd: &WD) -> Result<String, Error> {
         if path.is_empty() {
-            Ok(self.display(wd))
+            Ok(self.display(head, wd))
         } else {
             if let Some(i) = self.instances.iter().position(|i| i.name == path[0]) {
-                self.instances[i].display_path(&path[1..], wd)
+                if head.len() > 0 {
+                    head.push('.');
+                }
+                head += &path[0];
+                self.instances[i].display_path(head, &path[1..], wd)
             } else if let Some(i) = self.locals.iter().position(|w| w.name == path[0]) {
                 Ok(self.locals[i].display(wd))
             } else {
@@ -70,6 +74,20 @@ impl GraphModule {
                 self.instances[i].wire_addr(&path[1..])
             } else if let Some(i) = self.locals.iter().position(|w| w.name == path[0]) {
                 Ok(self.locals[i].values.clone())
+            } else {
+                Err(Error::InvalidPath(format!("No field with name '{}' in module '{}'", path[0], self.name)))
+            }
+        }
+    }
+
+    pub fn wire_width(&self, path: &[String]) -> Result<u64, Error> {
+        if path.is_empty() {
+            Err(Error::InvalidPath(String::from("This path refers to a module")))
+        } else {
+            if let Some(i) = self.instances.iter().position(|i| i.name == path[0]) {
+                self.instances[i].wire_width(&path[1..])
+            } else if let Some(i) = self.locals.iter().position(|w| w.name == path[0]) {
+                Ok(self.locals[i].values.len() as _)
             } else {
                 Err(Error::InvalidPath(format!("No field with name '{}' in module '{}'", path[0], self.name)))
             }
