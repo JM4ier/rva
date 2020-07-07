@@ -1,7 +1,8 @@
 #! /bin/sh
 
 cd "$(dirname "$0")"
-cd example
+cargo build --release
 
-python3 -i ../pyffi/example.py
+cd example
+python3 -i ../pyffi/interactive.py
 

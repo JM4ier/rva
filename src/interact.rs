@@ -1,5 +1,3 @@
-use std::ffi::CString;
-
 use nom::*;
 
 use crate::net::*;
@@ -48,6 +46,7 @@ pub unsafe extern "C" fn get_value(
     match graph.wire_addr(&path) {
         Ok(addr) => {
             let mut vec = addr.iter().map(|&a| sim.get_value(a)).collect::<Vec<bool>>();
+            vec.shrink_to_fit();
             *buffer = vec.as_mut_ptr();
             let len = vec.len();
             std::mem::forget(vec);
@@ -92,7 +91,13 @@ pub unsafe extern "C" fn set_value(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn drop_buffer(vec: *mut bool, len: usize) {
+pub unsafe extern "C" fn drop_bools(vec: *mut bool, len: usize) {
+    let vec = Vec::from_raw_parts(vec, len, len);
+    std::mem::drop(vec);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn drop_chars(vec: *mut u8, len: usize) {
     let vec = Vec::from_raw_parts(vec, len, len);
     std::mem::drop(vec);
 }
@@ -101,10 +106,11 @@ pub unsafe extern "C" fn drop_buffer(vec: *mut bool, len: usize) {
 pub unsafe extern "C" fn get_description(
     sim: &Simulation, 
     graph: &GraphModule, 
-    path_ptr: *const u8, path_len: u64)
--> CString 
+    path_ptr: *const u8, path_len: u64,
+    description_ptr: &mut *const u8)
+-> usize 
 {
-    let result = (|| {
+    let mut result = (|| {
         let location = match path(path_ptr, path_len) {
             Ok((_, path)) => path,
             Err(e) => return format!("Error: {:?}", e),
@@ -116,7 +122,11 @@ pub unsafe extern "C" fn get_description(
         }
     })();
 
-    CString::new(result).unwrap()
+    result.shrink_to_fit();
+    *description_ptr = result.as_bytes().as_ptr();
+    let len = result.len();
+    std::mem::forget(result);
+    len
 }
 
 #[no_mangle]
