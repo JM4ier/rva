@@ -36,14 +36,11 @@ _get_width.restype = c_ulonglong
 _drop_buffer = lib.drop_buffer
 
 def bools(value: int, size: int):
-    if value <= 0:
-        return [False]
-    else:
-        bools = []
-        for i in range(size):
-            bools.append(value & 1 > 0)
-            value = value >> 1
-        return bools
+    bools = []
+    for i in range(size):
+        bools.append(value & 1 > 0)
+        value = value >> 1
+    return bools
 
 def str_to_ptr(string: str):
     string = bytes(string, 'utf-8')
