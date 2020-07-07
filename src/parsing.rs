@@ -231,18 +231,45 @@ fn list_test() {
     );
 }
 
-fn wirebus(i: &str) -> IResult<&str, WireBus> {
-    alt((
-            delimited(
-                tag("{"),
-                list(wirepart, ","),
-                tag("}")
-            ),
-            map(
+fn repeat(i: &str) -> IResult<&str, usize> {
+    terminated(
+        number,
+        tuple((whitespace, tag("*"), whitespace)),
+    )(i)
+}
+
+fn repeating_wirepart(i: &str) -> IResult<&str, Vec<WirePart>> {
+    map(
+        tuple((
+                opt(repeat),
                 wirepart,
-                |wp| vec![wp],
-            )
-    ))(i)
+        )),
+        |(reps, part)| vec![part.clone(); reps.unwrap_or(1)]
+    )(i)
+}
+
+fn wirebus(i: &str) -> IResult<&str, WireBus> {
+    map(
+        tuple((
+                opt(repeat),
+                alt((
+                        delimited(
+                            tag("{"),
+                            list(repeating_wirepart, ","),
+                            tag("}")
+                        ),
+                        map(
+                            repeating_wirepart,
+                            |wp| vec![wp],
+                        )
+                ))
+        )),
+        |(reps, bus)| {
+            let bus: Vec<_> = bus.into_iter().flat_map(|w| w.into_iter()).collect();
+            let elems = reps.unwrap_or(1) * bus.len();
+            bus.into_iter().cycle().take(elems).collect()
+        }
+    )(i)
 }
 
 #[test]
@@ -251,6 +278,18 @@ fn wirebus_test() {
                 WirePart::total("a".to_string()), 
                 WirePart::ranged("b".to_string(), 3, 4), 
                 WirePart::ranged("c".to_string(), 0, 0)])));
+}
+
+#[test]
+fn wirebus_repeat_test() {
+    assert_eq!(
+        wirebus("5 * {0}"),
+        Ok(("", vec![WirePart::Constant(vec![false]); 5]))
+    );
+    assert_eq!(
+        wirebus("3 * {0b01}"),
+        Ok(("", vec![WirePart::Constant(vec![true, false]); 3]))
+    );
 }
 
 fn wire(i: &str) -> IResult<&str, Wire> {
@@ -352,7 +391,7 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
                     module: name
                 },
             )
-    ))(i)
+                ))(i)
 }
 
 #[test]

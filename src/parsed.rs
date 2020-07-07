@@ -47,13 +47,13 @@ pub struct Module {
     pub instances: Vec<Instance>,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum WireRange {
     Ranged {from: usize, to: usize},
     Total,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum WirePart {
     Local{name: String, range: WireRange},
     Constant(Vec<bool>),

@@ -1,4 +1,4 @@
 module Top() -> () {
 	Reg4 reg(clk=0, d=0000, reset=0) -> (q=0001);
-	Reg32 big_reg(clk=0, d=0xC0FFEEEE, reset=0) -> (q=0x00000000);
+	Reg32 big_reg(clk=0, d = 8*0xF, reset=0) -> (q=8*{0x0});
 }
