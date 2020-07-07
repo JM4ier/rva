@@ -33,6 +33,9 @@ impl GraphModule {
         for wire in self.locals.iter() {
             lines.push_str(&format!("{}\n", wire.display(wd)));
         }
+        if lines.is_empty() {
+            lines.push_str("    <none>\n");
+        }
         lines
     }
 
@@ -41,11 +44,20 @@ impl GraphModule {
         for inst in self.instances.iter() {
             lines.push_str(&format!("    {}::{}\n", inst.module_name, inst.name));
         }
+        if lines.is_empty() {
+            lines.push_str("    <none>\n");
+        }
         lines
     }
 
-    pub fn display<WD: WireDisplayer>(&self, name: String, wd: &WD) -> String {
-        format!("{}::{}\n  Wires:\n{}  Instances:\n{}\n", self.module_name, name, self.display_locals(wd), self.display_instances())
+    pub fn display<WD: WireDisplayer>(&self, mut name: String, wd: &WD) -> String {
+        if name.is_empty() {
+            name.push_str("<root>");
+        }
+        format!(
+            "{}::{}\n  Wires:\n{}  Instances:\n{}\n", 
+            self.module_name, name, self.display_locals(wd), self.display_instances()
+        )
     }
 
     pub fn display_path<WD: WireDisplayer>(&self, mut head: String, path: &[String], wd: &WD) -> Result<String, Error> {
