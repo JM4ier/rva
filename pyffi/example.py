@@ -98,27 +98,27 @@ class Simulation:
 
 class Node(object):
     def __init__(self, sim, path = None):
-        super(Node, self).__setattr__('__sim', sim)
-        super(Node, self).__setattr__('__path', path)
+        super(Node, self).__setattr__('_path', path)
+        super(Node, self).__setattr__('_sim', sim)
 
     def __getattr__(self, name):
-        path = super(Node, self).__getattribute__('__path')
-        sim  = super(Node, self).__getattribute__('__sim')
+        path = super(Node, self).__getattribute__('_path')
+        sim  = super(Node, self).__getattribute__('_sim')
         if path is None:
             return Node(sim, name)
         else:
             return Node(sim, path + '.' + name)
 
     def __repr__(self):
-        path = super(Node, self).__getattribute__('__path')
-        sim = super(Node, self).__getattribute__('__sim')
+        path = super(Node, self).__getattribute__('_path')
+        sim = super(Node, self).__getattribute__('_sim')
         if path is None:
             path = ''
         return sim.get_description(path)
 
     def __setattr__(self, name, value):
-        path = super(Node, self).__getattribute__('__path')
-        sim  = super(Node, self).__getattribute__('__sim')
+        path = super(Node, self).__getattribute__('_path')
+        sim  = super(Node, self).__getattribute__('_sim')
         sim.set_value(path + '.' + name, value)
 
 simulation = Simulation()
