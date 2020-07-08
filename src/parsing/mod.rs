@@ -420,5 +420,12 @@ fn module(i: &str) -> IResult<&str, Module> {
 }
 
 pub fn modules(i: &str) -> IResult<&str, Vec<Module>> {
-    many0(module)(i)
+    let (mut rest, mut modules) = many0(module)(i)?;
+    if rest.len() > 0 {
+        // should return an error, as there is an unparsed rest that is 
+        // apparently not a valid module
+        module(rest)?;
+    }
+    Ok((rest, modules))
 }
+

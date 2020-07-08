@@ -246,3 +246,10 @@ fn unary_operation_test() {
     );
 }
 
+#[test]
+#[should_panic]
+fn unparsed_module_causes_error_test() {
+    // causes error because module names need to be uppercase
+    modules("module mod() -> () {}").unwrap();
+}
+
