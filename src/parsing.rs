@@ -166,14 +166,14 @@ fn wirepart_test() {
         wirepart("asdf "), 
         Ok((
                 " ", 
-                WirePart::total("asdf".to_string())
+                WirePart::total("asdf")
         ))
     );
     assert_eq!(
         wirepart("test[1:2] other stuff"), 
         Ok((
                 " other stuff", 
-                WirePart::ranged("test".to_string(), 1, 2)
+                WirePart::ranged("test", 1, 2)
         ))
     );
 }
@@ -275,9 +275,9 @@ fn wirebus(i: &str) -> IResult<&str, WireBus> {
 #[test]
 fn wirebus_test() {
     assert_eq!(wirebus("{a, b[3:4], c[0]} "), Ok((" ", vec![
-                WirePart::total("a".to_string()), 
-                WirePart::ranged("b".to_string(), 3, 4), 
-                WirePart::ranged("c".to_string(), 0, 0)])));
+                WirePart::total("a"),
+                WirePart::ranged("b", 3, 4),
+                WirePart::ranged("c", 0, 0)])));
 }
 
 #[test]
@@ -387,7 +387,7 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
             map(
                 field_name,
                 |name| Connection { 
-                    local: vec![WirePart::total(name.to_string())], 
+                    local: vec![WirePart::total(&name)],
                     module: name
                 },
             )
@@ -398,14 +398,14 @@ fn assignment(i: &str) -> IResult<&str, Connection> {
 fn assignment_test() {
     assert_eq!(assignment("a=b"), Ok(("", Connection {
         module: "a".to_string(),
-        local: vec![WirePart::total("b".to_string())]
+        local: vec![WirePart::total("b")]
     })));
     assert_eq!(assignment("a = {c[2], d[1:4], f}"), Ok(("", Connection {
         module: "a".to_string(),
         local: vec![
-            WirePart::ranged("c".to_string(), 2, 2),
-            WirePart::ranged("d".to_string(), 1, 4),
-            WirePart::total("f".to_string())
+            WirePart::ranged("c", 2, 2),
+            WirePart::ranged("d", 1, 4),
+            WirePart::total("f")
         ]
     })));
 }
@@ -448,16 +448,16 @@ fn instance_test() {
                     inputs: vec![
                         Connection {
                             module: "a".to_string(),
-                            local: vec![WirePart::total("in".to_string())]
+                            local: vec![WirePart::total("in")]
                         },
                         Connection {
                             module: "b".to_string(),
-                            local: vec![WirePart::total("in".to_string())]
+                            local: vec![WirePart::total("in")]
                         },
                     ],
                     outputs: vec![Connection {
                         module: "out".to_string(),
-                        local: vec![WirePart::total("out".to_string())]
+                        local: vec![WirePart::total("out")]
                     }],
                 }
     )));
@@ -523,15 +523,10 @@ fn operation_parentheses_test() {
     assert_eq!(
         operation("(a)"),
         Ok((
-            "",
-            Operation::Wire(
-                vec![
-                    WirePart::Local {
-                        name: String::from("a"),
-                        range: WireRange::Total,
-                    }
-                ]
-            )
+                "",
+                Operation::Wire(
+                    vec![WirePart::total("a")]
+                )
         ))
     );
 }
