@@ -138,12 +138,12 @@ fn local_wire_test() {
 }
 
 #[test]
-fn assignment_test() {
-    assert_eq!(assignment("a=b"), Ok(("", Connection {
+fn io_binding_test() {
+    assert_eq!(io_binding("a=b"), Ok(("", Connection {
         module: "a".to_string(),
         local: vec![WirePart::total("b")]
     })));
-    assert_eq!(assignment("a = {c[2], d[1:4], f}"), Ok(("", Connection {
+    assert_eq!(io_binding("a = {c[2], d[1:4], f}"), Ok(("", Connection {
         module: "a".to_string(),
         local: vec![
             WirePart::ranged("c", 2, 2),

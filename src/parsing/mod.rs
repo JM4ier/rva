@@ -237,7 +237,7 @@ fn output_wire(i: &str) -> IResult<&str, Wire> {
     map(wire, |w| Wire { kind: WireKind::Output, ..w})(i)
 }
 
-fn assignment(i: &str) -> IResult<&str, Connection> {
+fn io_binding(i: &str) -> IResult<&str, Connection> {
     alt((
             map(
                 tuple((
@@ -272,7 +272,7 @@ fn instance(i: &str) -> IResult<&str, Instance> {
                 whitespace,
                 delimited(
                     tag("("),
-                    list(assignment, ","),
+                    list(io_binding, ","),
                     tag(")"),
                 ),
                 whitespace,
@@ -280,7 +280,7 @@ fn instance(i: &str) -> IResult<&str, Instance> {
                 whitespace,
                 delimited(
                     tag("("),
-                    list(assignment, ","),
+                    list(io_binding, ","),
                     tag(")"),
                 ),
                 tag(";"),
