@@ -463,6 +463,135 @@ fn instance_test() {
     )));
 }
 
+fn unary_operation<'a, F>(op_tag: &'static str, fun: F) -> impl Fn(&'a str) -> IResult<&'a str, Operation>
+where F: Copy + Fn(Box<Operation>) -> Operation {
+    move |i: &'a str| {
+        map(
+            preceded(
+                tuple((whitespace, tag(op_tag), whitespace)),
+                operation_literal
+            ),
+            |op| fun(Box::new(op))
+        )(i)
+    }
+}
+
+fn binary_operation<'a, F> (op_tag: &'static str, fun: F) -> impl Fn(&'a str) -> IResult<&'a str, Operation> 
+where F: Copy + Fn(Box<Operation>, Box<Operation>) -> Operation {
+    move |i: &'a str| {
+        map(
+            tuple((
+                    whitespace,
+                    operation_literal,
+                    whitespace,
+                    tag(op_tag),
+                    whitespace,
+                    operation,
+                    whitespace
+            )),
+            |tup| fun(Box::new(tup.1), Box::new(tup.5))
+        )(i)
+    }
+}
+
+fn operation_literal(i: &str) -> IResult<&str, Operation> {
+    alt((
+            map(wirebus, Operation::Wire),
+            delimited(
+                tuple((whitespace, tag("("), whitespace)),
+                operation,
+                tuple((whitespace, tag(")"), whitespace)),
+            ),
+            unary_operation("!", Operation::Not),
+            unary_operation("&", Operation::AndReduce),
+            unary_operation("|", Operation::OrReduce),
+            unary_operation("^", Operation::XorReduce),
+    ))(i)
+}
+
+fn operation(i: &str) -> IResult<&str, Operation> {
+    alt((
+            binary_operation("&", Operation::And),
+            binary_operation("|", Operation::Or),
+            binary_operation("^", Operation::Xor),
+            operation_literal,
+    ))(i)
+}
+
+#[test]
+fn operation_parentheses_test() {
+    assert_eq!(
+        operation("(a)"),
+        Ok((
+            "",
+            Operation::Wire(
+                vec![
+                    WirePart::Local {
+                        name: String::from("a"),
+                        range: WireRange::Total,
+                    }
+                ]
+            )
+        ))
+    );
+}
+
+#[test]
+fn binary_operation_test() {
+    assert_eq!(
+        operation("a & b"),
+        Ok((
+                "",
+                Operation::And(
+                    Box::new(Operation::Wire(vec![WirePart::total("a")])),
+                    Box::new(Operation::Wire(vec![WirePart::total("b")])),
+                )
+        ))
+    );
+}
+
+#[test]
+fn binary_paren_operation_test() {
+    assert_eq!(
+        operation("(a | b) & (c ^ d)"),
+        Ok((
+                "",
+                Operation::And(
+                    Box::new(
+                        Operation::Or(
+                            Box::new(Operation::Wire(vec![WirePart::total("a")])),
+                            Box::new(Operation::Wire(vec![WirePart::total("b")])),
+                        )
+                    ),
+                    Box::new(
+                        Operation::Xor(
+                            Box::new(Operation::Wire(vec![WirePart::total("c")])),
+                            Box::new(Operation::Wire(vec![WirePart::total("d")])),
+                        )
+                    )
+                )
+        ))
+    );
+}
+
+#[test]
+fn unary_operation_test() {
+    assert_eq!(
+        operation("&(a | b)"),
+        Ok((
+                "",
+                Operation::AndReduce(
+                    Box::new(
+                        Operation::Or(
+                            Box::new(Operation::Wire(vec![WirePart::total("a")])),
+                            Box::new(Operation::Wire(vec![WirePart::total("b")])),
+                        )
+                    ),
+                )
+        ))
+    );
+}
+
 fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
     map(
         tuple((
@@ -487,7 +616,7 @@ fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
                 whitespace
         )),
         |(_, _, _, name, _, inputs, _, _, _, outputs, _)| (name, inputs, outputs)
-            )(i)
+    )(i)
 }
 
 enum BodyPart {

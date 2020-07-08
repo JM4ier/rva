@@ -59,18 +59,37 @@ pub enum WirePart {
     Constant(Vec<bool>),
 }
 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct WireAssignment {
+    wire: WireBus,
+    operation: Op,
+}
+
+type Op = Box<Operation>;
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum Operation {
+    Wire(WireBus),
+    And(Op, Op),
+    Or(Op, Op),
+    Xor(Op, Op),
+    AndReduce(Op),
+    OrReduce(Op),
+    XorReduce(Op),
+    Not(Op),
+}
+
 pub type WireBus = Vec<WirePart>;
 
 impl WirePart {
-    pub fn total(name: String) -> Self {
+    pub fn total<T: ToString>(name: T) -> Self {
         WirePart::Local {
-            name,
+            name: name.to_string(),
             range: WireRange::Total,
         }
     }
-    pub fn ranged(name: String, from: usize, to: usize) -> Self {
+    pub fn ranged<T: ToString>(name: T, from: usize, to: usize) -> Self {
         Self::Local {
-            name,
+            name: name.to_string(),
             range: WireRange::Ranged {from, to},
         }
     }
