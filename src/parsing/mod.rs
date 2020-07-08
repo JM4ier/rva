@@ -20,7 +20,6 @@ fn bit(i: &str) -> IResult<&str, bool> {
     )(i)
 }
 
-
 fn binary_number(i: &str) -> IResult<&str, Vec<bool>> {
     map(
         preceded(opt(tag("0b")), many1(bit)),
@@ -295,9 +294,10 @@ fn unary_operation<'a, F>(op_tag: &'static str, fun: F) -> impl Fn(&'a str) -> I
 where F: Copy + Fn(Box<Operation>) -> Operation {
     move |i: &'a str| {
         map(
-            preceded(
+            delimited(
                 tuple((whitespace, tag(op_tag), whitespace)),
-                operation_literal
+                operation_literal,
+                whitespace
             ),
             |op| fun(Box::new(op))
         )(i)
@@ -346,6 +346,21 @@ fn operation(i: &str) -> IResult<&str, Operation> {
     ))(i)
 }
 
+fn wire_assignment(i: &str) -> IResult<&str, WireAssignment> {
+    map(
+        tuple((
+                wirebus,
+                whitespace,
+                tag("="),
+                whitespace,
+                operation,
+                tag(";"),
+                whitespace,
+        )),
+        |(wire, _, _, _, operation, _, _)| WireAssignment{ wire, operation }
+    )(i)
+}
+
 fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
     map(
         tuple((
@@ -376,12 +391,14 @@ fn module_header(i: &str) -> IResult<&str, (String, Vec<Wire>, Vec<Wire>)> {
 enum BodyPart {
     LocalWire(Vec<Wire>),
     Instance(Instance),
+    Assignment(WireAssignment),
 }
 
 fn body_part (i: &str) -> IResult<&str, BodyPart> {
     alt((
-            map(local_wire, |w| BodyPart::LocalWire(w)),
-            map(instance, |i| BodyPart::Instance(i)),
+            map(local_wire, BodyPart::LocalWire),
+            map(instance, BodyPart::Instance),
+            map(wire_assignment, BodyPart::Assignment),
     ))(i)
 }
 
@@ -403,6 +420,7 @@ fn module(i: &str) -> IResult<&str, Module> {
         |((name, mut inputs, mut outputs), _,  body)| {
             let mut locals = Vec::new();
             let mut instances = Vec::new();
+            let mut assignments = Vec::new();
 
             locals.append(&mut inputs);
             locals.append(&mut outputs);
@@ -411,16 +429,17 @@ fn module(i: &str) -> IResult<&str, Module> {
                 match line {
                     BodyPart::LocalWire(mut w) => locals.append(&mut w),
                     BodyPart::Instance(i) => instances.push(i),
+                    BodyPart::Assignment(a) => assignments.push(a),
                 }
             }
 
-            Module { name, locals, instances }
+            Module { name, locals, instances, assignments }
         }
     )(i)
 }
 
 pub fn modules(i: &str) -> IResult<&str, Vec<Module>> {
-    let (mut rest, mut modules) = many0(module)(i)?;
+    let (rest, modules) = many0(module)(i)?;
     if rest.len() > 0 {
         // should return an error, as there is an unparsed rest that is 
         // apparently not a valid module

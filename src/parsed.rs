@@ -45,6 +45,8 @@ pub struct Module {
 
     /// Local Sub-Module instances
     pub instances: Vec<Instance>,
+
+    pub assignments: Vec<WireAssignment>,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -61,8 +63,8 @@ pub enum WirePart {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct WireAssignment {
-    wire: WireBus,
-    operation: Op,
+    pub wire: WireBus,
+    pub operation: Operation,
 }
 
 type Op = Box<Operation>;

@@ -247,6 +247,28 @@ fn unary_operation_test() {
 }
 
 #[test]
+fn wire_assignment_test() {
+    assert_eq!(
+        wire_assignment("wire[5:10] = (!in1[0:5] | in2) & in3;"),
+        Ok(("",
+                WireAssignment {
+                    wire: vec![WirePart::ranged("wire", 5, 10)],
+                    operation:
+                        Operation::And(
+                            Box::new(Operation::Or(
+                                    Box::new(Operation::Not(
+                                            Box::new(Operation::Wire(vec![WirePart::ranged("in1", 0, 5)])),
+                                    )),
+                                    Box::new(Operation::Wire(vec![WirePart::total("in2")]))
+                            )),
+                            Box::new(Operation::Wire(vec![WirePart::total("in3")])),
+                        ),
+                }
+        ))
+    );
+}
+
+#[test]
 #[should_panic]
 fn unparsed_module_causes_error_test() {
     // causes error because module names need to be uppercase
