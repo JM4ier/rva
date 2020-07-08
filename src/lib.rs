@@ -1,5 +1,6 @@
 mod parsed;
 mod parsing;
+mod assignment;
 mod net;
 mod netgraph;
 mod link;

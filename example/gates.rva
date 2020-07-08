@@ -4,6 +4,12 @@ module Not (in) -> (out) {
     Nor inv(a=in, b=in) -> (out);
 }
 
+module Buffer (in) -> (out) {
+    wire inv;
+    Not n1(in) -> (out=inv);
+    Not n2(in=inv) -> (out);
+}
+
 module And(a, b) -> (out) {
     wire inva, invb;
 

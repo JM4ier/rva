@@ -45,8 +45,6 @@ pub struct Module {
 
     /// Local Sub-Module instances
     pub instances: Vec<Instance>,
-
-    pub assignments: Vec<WireAssignment>,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -63,7 +61,7 @@ pub enum WirePart {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct WireAssignment {
-    pub wire: WireBus,
+    pub bus: WireBus,
     pub operation: Operation,
 }
 
@@ -97,6 +95,37 @@ impl WirePart {
     }
     pub fn constant(constant: Vec<bool>) -> Self {
         Self::Constant(constant)
+    }
+    pub fn width(&self, module: &Module) -> Result<usize, ()> {
+        match self {
+            Self::Constant(c) => Ok(c.len()),
+            Self::Local{name, range} => {
+                match range {
+                    WireRange::Ranged{from, to} => Ok(to-from+1),
+                    WireRange::Total => {
+                        for local in module.locals.iter() {
+                            if local.name == *name {
+                                return Ok(local.width);
+                            }
+                        }
+                        Err(())
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Operation {
+    pub fn width(&self, module: &Module) -> Result<usize, ()> {
+        match self {
+            Self::Wire(bus) => bus.iter().map(|w| w.width(module)).sum(),
+            Self::And(op1, op2) => op1.width(module).max(op2.width(module)),
+            Self::Xor(op1, op2) => op1.width(module).max(op2.width(module)),
+            Self::Or(op1, op2)  => op1.width(module).max(op2.width(module)),
+            Self::Not(op) => op.width(module),
+            _ => Ok(1), // reductions/reduces? lead to a 1-bit result
+        }
     }
 }
 

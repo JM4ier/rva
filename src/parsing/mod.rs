@@ -9,6 +9,7 @@ use nom::{
 };
 
 use crate::parsed::*;
+use crate::assignment;
 
 #[cfg(test)]
 mod tests;
@@ -357,7 +358,7 @@ fn wire_assignment(i: &str) -> IResult<&str, WireAssignment> {
                 tag(";"),
                 whitespace,
         )),
-        |(wire, _, _, _, operation, _, _)| WireAssignment{ wire, operation }
+        |(bus, _, _, _, operation, _, _)| WireAssignment{ bus, operation }
     )(i)
 }
 
@@ -415,7 +416,7 @@ fn module_body(i: &str) -> IResult<&str, Vec<BodyPart>> {
 }
 
 fn module(i: &str) -> IResult<&str, Module> {
-    map(
+    map_res::<_, _, _, _, (), _, _>(
         tuple((module_header, whitespace, module_body)),
         |((name, mut inputs, mut outputs), _,  body)| {
             let mut locals = Vec::new();
@@ -433,7 +434,10 @@ fn module(i: &str) -> IResult<&str, Module> {
                 }
             }
 
-            Module { name, locals, instances, assignments }
+            let mut module = Module { name, locals, instances };
+            let mut resolver = assignment::Resolver::new(&mut module);
+            resolver.resolve_assignments(assignments)?;
+            Ok(module)
         }
     )(i)
 }
